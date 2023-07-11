@@ -1,0 +1,16 @@
+{
+    "board": "arduino:renesas_uno:minima",
+    "sketch": "BalanceBot.ino",
+    "output": "build/",
+    "port": "COM1",
+    "buildPreferences": [
+        [
+            "build.extra_flags",
+            "-Wall -Wextra"
+        ],
+        [
+            "compiler.cpp.extra_flags",
+            "-Wall -Wextra"
+        ]
+    ]
+}

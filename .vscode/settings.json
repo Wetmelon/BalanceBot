@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.config": "makefile",
+        "cmath": "cpp"
+    }
+}
