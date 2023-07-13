@@ -17,7 +17,7 @@ struct Get_Version_msg_t final {
 
     Get_Version_msg_t() = default;
 
-    Get_Version_msg_t(const CanMsg& msg) {
+    Get_Version_msg_t(const can_Message_t& msg) {
         Protocol_Version      = can_getSignal<uint8_t>(msg.data, 0, 8, true);
         Hw_Version_Major      = can_getSignal<uint8_t>(msg.data, 8, 8, true);
         Hw_Version_Minor      = can_getSignal<uint8_t>(msg.data, 16, 8, true);
@@ -28,7 +28,7 @@ struct Get_Version_msg_t final {
         Fw_Version_Unreleased = can_getSignal<uint8_t>(msg.data, 56, 8, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint8_t>(msg.data, Protocol_Version, 0, 8, true);
         can_setSignal<uint8_t>(msg.data, Hw_Version_Major, 8, 8, true);
         can_setSignal<uint8_t>(msg.data, Hw_Version_Minor, 16, 8, true);
@@ -39,7 +39,7 @@ struct Get_Version_msg_t final {
         can_setSignal<uint8_t>(msg.data, Fw_Version_Unreleased, 56, 8, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Protocol_Version      = can_getSignal<uint8_t>(msg.data, 0, 8, true);
         Hw_Version_Major      = can_getSignal<uint8_t>(msg.data, 8, 8, true);
         Hw_Version_Minor      = can_getSignal<uint8_t>(msg.data, 16, 8, true);
@@ -62,21 +62,21 @@ struct Heartbeat_msg_t final {
 
     Heartbeat_msg_t() = default;
 
-    Heartbeat_msg_t(const CanMsg& msg) {
+    Heartbeat_msg_t(const can_Message_t& msg) {
         Axis_Error           = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Axis_State           = can_getSignal<uint8_t>(msg.data, 32, 8, true);
         Procedure_Result     = can_getSignal<uint8_t>(msg.data, 40, 8, true);
         Trajectory_Done_Flag = can_getSignal<uint8_t>(msg.data, 48, 1, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Axis_Error, 0, 32, true);
         can_setSignal<uint8_t>(msg.data, Axis_State, 32, 8, true);
         can_setSignal<uint8_t>(msg.data, Procedure_Result, 40, 8, true);
         can_setSignal<uint8_t>(msg.data, Trajectory_Done_Flag, 48, 1, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Axis_Error           = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Axis_State           = can_getSignal<uint8_t>(msg.data, 32, 8, true);
         Procedure_Result     = can_getSignal<uint8_t>(msg.data, 40, 8, true);
@@ -90,13 +90,13 @@ struct Heartbeat_msg_t final {
 struct Estop_msg_t final {
     Estop_msg_t() = default;
 
-    Estop_msg_t(const CanMsg& msg) {
+    Estop_msg_t(const can_Message_t& msg) {
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
     }
 
     static uint8_t getCmdId() { return 0x002; }
@@ -109,17 +109,17 @@ struct Get_Error_msg_t final {
 
     Get_Error_msg_t() = default;
 
-    Get_Error_msg_t(const CanMsg& msg) {
+    Get_Error_msg_t(const can_Message_t& msg) {
         Active_Errors = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Disarm_Reason = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Active_Errors, 0, 32, true);
         can_setSignal<uint32_t>(msg.data, Disarm_Reason, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Active_Errors = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Disarm_Reason = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
@@ -133,15 +133,15 @@ struct Set_Axis_Node_ID_msg_t final {
 
     Set_Axis_Node_ID_msg_t() = default;
 
-    Set_Axis_Node_ID_msg_t(const CanMsg& msg) {
+    Set_Axis_Node_ID_msg_t(const can_Message_t& msg) {
         Axis_Node_ID = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Axis_Node_ID, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Axis_Node_ID = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
@@ -154,15 +154,15 @@ struct Set_Axis_State_msg_t final {
 
     Set_Axis_State_msg_t() = default;
 
-    Set_Axis_State_msg_t(const CanMsg& msg) {
+    Set_Axis_State_msg_t(const can_Message_t& msg) {
         Axis_Requested_State = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Axis_Requested_State, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Axis_Requested_State = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
@@ -176,17 +176,17 @@ struct Get_Encoder_Estimates_msg_t final {
 
     Get_Encoder_Estimates_msg_t() = default;
 
-    Get_Encoder_Estimates_msg_t(const CanMsg& msg) {
+    Get_Encoder_Estimates_msg_t(const can_Message_t& msg) {
         Pos_Estimate = can_getSignal<float>(msg.data, 0, 32, true);
         Vel_Estimate = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Pos_Estimate, 0, 32, true);
         can_setSignal<float>(msg.data, Vel_Estimate, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Pos_Estimate = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Vel_Estimate = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -201,17 +201,17 @@ struct Set_Controller_Mode_msg_t final {
 
     Set_Controller_Mode_msg_t() = default;
 
-    Set_Controller_Mode_msg_t(const CanMsg& msg) {
+    Set_Controller_Mode_msg_t(const can_Message_t& msg) {
         Control_Mode = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Input_Mode   = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Control_Mode, 0, 32, true);
         can_setSignal<uint32_t>(msg.data, Input_Mode, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Control_Mode = can_getSignal<uint32_t>(msg.data, 0, 32, true);
         Input_Mode   = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
@@ -227,19 +227,19 @@ struct Set_Input_Pos_msg_t final {
 
     Set_Input_Pos_msg_t() = default;
 
-    Set_Input_Pos_msg_t(const CanMsg& msg) {
+    Set_Input_Pos_msg_t(const can_Message_t& msg) {
         Input_Pos = can_getSignal<float>(msg.data, 0, 32, true);
         Vel_FF    = can_getSignal<int16_t>(msg.data, 32, 16, true, 0.001f, 0.0f);
         Torque_FF = can_getSignal<int16_t>(msg.data, 48, 16, true, 0.001f, 0.0f);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Input_Pos, 0, 32, true);
         can_setSignal<int16_t>(msg.data, Vel_FF, 32, 16, true, 0.001f, 0.0f);
         can_setSignal<int16_t>(msg.data, Torque_FF, 48, 16, true, 0.001f, 0.0f);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Input_Pos = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Vel_FF    = can_getSignal<int16_t>(msg.data, 32, 16, true, 0.001f, 0.0f);
         Torque_FF = can_getSignal<int16_t>(msg.data, 48, 16, true, 0.001f, 0.0f);
@@ -255,17 +255,17 @@ struct Set_Input_Vel_msg_t final {
 
     Set_Input_Vel_msg_t() = default;
 
-    Set_Input_Vel_msg_t(const CanMsg& msg) {
+    Set_Input_Vel_msg_t(const can_Message_t& msg) {
         Input_Vel       = can_getSignal<float>(msg.data, 0, 32, true);
         Input_Torque_FF = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Input_Vel, 0, 32, true);
         can_setSignal<float>(msg.data, Input_Torque_FF, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Input_Vel       = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Input_Torque_FF = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -279,15 +279,15 @@ struct Set_Input_Torque_msg_t final {
 
     Set_Input_Torque_msg_t() = default;
 
-    Set_Input_Torque_msg_t(const CanMsg& msg) {
+    Set_Input_Torque_msg_t(const can_Message_t& msg) {
         Input_Torque = can_getSignal<float>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Input_Torque, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Input_Torque = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
@@ -301,17 +301,17 @@ struct Set_Limits_msg_t final {
 
     Set_Limits_msg_t() = default;
 
-    Set_Limits_msg_t(const CanMsg& msg) {
+    Set_Limits_msg_t(const can_Message_t& msg) {
         Velocity_Limit = can_getSignal<float>(msg.data, 0, 32, true);
         Current_Limit  = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Velocity_Limit, 0, 32, true);
         can_setSignal<float>(msg.data, Current_Limit, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Velocity_Limit = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Current_Limit  = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -325,15 +325,15 @@ struct Set_Traj_Vel_Limit_msg_t final {
 
     Set_Traj_Vel_Limit_msg_t() = default;
 
-    Set_Traj_Vel_Limit_msg_t(const CanMsg& msg) {
+    Set_Traj_Vel_Limit_msg_t(const can_Message_t& msg) {
         Traj_Vel_Limit = can_getSignal<float>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Traj_Vel_Limit, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Traj_Vel_Limit = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
@@ -347,17 +347,17 @@ struct Set_Traj_Accel_Limits_msg_t final {
 
     Set_Traj_Accel_Limits_msg_t() = default;
 
-    Set_Traj_Accel_Limits_msg_t(const CanMsg& msg) {
+    Set_Traj_Accel_Limits_msg_t(const can_Message_t& msg) {
         Traj_Accel_Limit = can_getSignal<float>(msg.data, 0, 32, true);
         Traj_Decel_Limit = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Traj_Accel_Limit, 0, 32, true);
         can_setSignal<float>(msg.data, Traj_Decel_Limit, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Traj_Accel_Limit = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Traj_Decel_Limit = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -371,15 +371,15 @@ struct Set_Traj_Inertia_msg_t final {
 
     Set_Traj_Inertia_msg_t() = default;
 
-    Set_Traj_Inertia_msg_t(const CanMsg& msg) {
+    Set_Traj_Inertia_msg_t(const can_Message_t& msg) {
         Traj_Inertia = can_getSignal<float>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Traj_Inertia, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Traj_Inertia = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
@@ -393,17 +393,17 @@ struct Get_Iq_msg_t final {
 
     Get_Iq_msg_t() = default;
 
-    Get_Iq_msg_t(const CanMsg& msg) {
+    Get_Iq_msg_t(const can_Message_t& msg) {
         Iq_Setpoint = can_getSignal<float>(msg.data, 0, 32, true);
         Iq_Measured = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Iq_Setpoint, 0, 32, true);
         can_setSignal<float>(msg.data, Iq_Measured, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Iq_Setpoint = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Iq_Measured = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -418,17 +418,17 @@ struct Get_Temperature_msg_t final {
 
     Get_Temperature_msg_t() = default;
 
-    Get_Temperature_msg_t(const CanMsg& msg) {
+    Get_Temperature_msg_t(const can_Message_t& msg) {
         FET_Temperature   = can_getSignal<float>(msg.data, 0, 32, true);
         Motor_Temperature = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, FET_Temperature, 0, 32, true);
         can_setSignal<float>(msg.data, Motor_Temperature, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         FET_Temperature   = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Motor_Temperature = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -440,13 +440,13 @@ struct Get_Temperature_msg_t final {
 struct Reboot_msg_t final {
     Reboot_msg_t() = default;
 
-    Reboot_msg_t(const CanMsg& msg) {
+    Reboot_msg_t(const can_Message_t& msg) {
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
     }
 
     static uint8_t getCmdId() { return 0x016; }
@@ -459,17 +459,17 @@ struct Get_Bus_Voltage_Current_msg_t final {
 
     Get_Bus_Voltage_Current_msg_t() = default;
 
-    Get_Bus_Voltage_Current_msg_t(const CanMsg& msg) {
+    Get_Bus_Voltage_Current_msg_t(const can_Message_t& msg) {
         Bus_Voltage = can_getSignal<float>(msg.data, 0, 32, true);
         Bus_Current = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Bus_Voltage, 0, 32, true);
         can_setSignal<float>(msg.data, Bus_Current, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Bus_Voltage = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Bus_Current = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -481,13 +481,13 @@ struct Get_Bus_Voltage_Current_msg_t final {
 struct Clear_Errors_msg_t final {
     Clear_Errors_msg_t() = default;
 
-    Clear_Errors_msg_t(const CanMsg& msg) {
+    Clear_Errors_msg_t(const can_Message_t& msg) {
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
     }
 
     static uint8_t getCmdId() { return 0x018; }
@@ -499,15 +499,15 @@ struct Set_Absolute_Position_msg_t final {
 
     Set_Absolute_Position_msg_t() = default;
 
-    Set_Absolute_Position_msg_t(const CanMsg& msg) {
+    Set_Absolute_Position_msg_t(const can_Message_t& msg) {
         Position = can_getSignal<float>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Position, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Position = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
@@ -520,15 +520,15 @@ struct Set_Pos_Gain_msg_t final {
 
     Set_Pos_Gain_msg_t() = default;
 
-    Set_Pos_Gain_msg_t(const CanMsg& msg) {
+    Set_Pos_Gain_msg_t(const can_Message_t& msg) {
         Pos_Gain = can_getSignal<float>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Pos_Gain, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Pos_Gain = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
@@ -542,17 +542,17 @@ struct Set_Vel_Gains_msg_t final {
 
     Set_Vel_Gains_msg_t() = default;
 
-    Set_Vel_Gains_msg_t(const CanMsg& msg) {
+    Set_Vel_Gains_msg_t(const can_Message_t& msg) {
         Vel_Gain            = can_getSignal<float>(msg.data, 0, 32, true);
         Vel_Integrator_Gain = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Vel_Gain, 0, 32, true);
         can_setSignal<float>(msg.data, Vel_Integrator_Gain, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Vel_Gain            = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Vel_Integrator_Gain = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -567,17 +567,17 @@ struct Get_Torques_msg_t final {
 
     Get_Torques_msg_t() = default;
 
-    Get_Torques_msg_t(const CanMsg& msg) {
+    Get_Torques_msg_t(const can_Message_t& msg) {
         Torque_Target   = can_getSignal<float>(msg.data, 0, 32, true);
         Torque_Estimate = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<float>(msg.data, Torque_Target, 0, 32, true);
         can_setSignal<float>(msg.data, Torque_Estimate, 32, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Torque_Target   = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
         Torque_Estimate = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
@@ -591,15 +591,15 @@ struct Get_Controller_Error_msg_t final {
 
     Get_Controller_Error_msg_t() = default;
 
-    Get_Controller_Error_msg_t(const CanMsg& msg) {
+    Get_Controller_Error_msg_t(const can_Message_t& msg) {
         Controller_Error = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
         can_setSignal<uint32_t>(msg.data, Controller_Error, 0, 32, true);
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         Controller_Error = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
@@ -610,13 +610,13 @@ struct Get_Controller_Error_msg_t final {
 struct Enter_DFU_Mode_msg_t final {
     Enter_DFU_Mode_msg_t() = default;
 
-    Enter_DFU_Mode_msg_t(const CanMsg& msg) {
+    Enter_DFU_Mode_msg_t(const can_Message_t& msg) {
     }
 
-    void encode(CanMsg& msg) const {
+    void encode(can_Message_t& msg) const {
     }
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
     }
 
     static uint8_t getCmdId() { return 0x01F; }
@@ -682,7 +682,7 @@ struct ODriveCAN {
         kEnterDFUModeMsg         = 0x01F,
     };
 
-    void decode(const CanMsg& msg) {
+    void decode(const can_Message_t& msg) {
         switch (get_cmd_id(msg.id)) {
             case kGetVersionMsg: get_version_msg.decode(msg); break;
             case kHeartbeatMsg: heartbeat_msg.decode(msg); break;
@@ -714,10 +714,10 @@ struct ODriveCAN {
         }
     };
 
-    CanMsg encode(const CmdList cmd) const {
-        CanMsg msg;
-        msg.id          = make_msg_id(cmd);
-        msg.data_length = 8;
+    can_Message_t encode(const CmdList cmd) const {
+        can_Message_t msg;
+        msg.id  = make_msg_id(cmd);
+        msg.dlc = 8;
 
         switch (cmd) {
             case kGetVersionMsg: get_version_msg.encode(msg); break;

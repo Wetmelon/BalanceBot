@@ -4,9 +4,11 @@
 #include <cstring>
 
 struct can_Message_t {
-    uint32_t id = 0x000;
+    uint32_t id         = 0x000;
+    uint8_t dlc         = 0;
     bool is_extended_id = false;
-    
+    bool rtr            = false;
+    uint8_t data[8]      = {0};
 };
 
 template <typename T, size_t N>

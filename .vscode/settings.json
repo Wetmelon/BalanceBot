@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "*.config": "makefile",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "algorithm": "cpp"
     }
 }
