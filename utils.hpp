@@ -48,9 +48,9 @@ struct PIControllerClass {
     float update(bool enable, float target, float actual, float Ts) {
         const float error  = target - actual;
         const float p_term = error * settings.Kp;
-        const float d_term = actual - last_actual;  // Derivative on measurement
+        const float d_term = (actual - last_actual) * settings.Kd;  // Derivative on measurement
 
-        i_term += error * settings.Kp * Ts;
+        i_term += error * settings.Ki * Ts;
         i_term = odrv::clamp(i_term, settings.iterm_min, settings.iterm_max);
         i_term = enable ? i_term : 0.0f;
 
@@ -102,33 +102,49 @@ struct ImuWrapper {
         // Enable i2c at 400kHz
         Wire.begin();
 
-        imu.begin(0x4A);
-        imu.enableRotationVector(10);  // Gyro and Accel only
+        _imu.begin(0x4A);
+        _imu.enableRotationVector(10);  // Gyro and Accel only
 
         Wire.setClock(400000);
     }
 
     void step() {
-        if (imu.dataAvailable()) {
+        _data_valid = false;
+        if (_imu.dataAvailable()) {
+            timer.reset();
+            _data_valid = true;
             // qw = imu.getQuatReal();
             // qi = imu.getQuatI();
             // qj = imu.getQuatJ();
             // qk = imu.getQuatK();
 
             // Sensor is oriented in such a way that imu roll is vehicle pitch
-            pitch = imu.getRoll() * (180.0f / kPi) - 90.0f;
-            roll  = imu.getPitch() * (180.0f / kPi);
-            yaw   = imu.getYaw() * (180.0f / kPi);
+            pitch = _imu.getRoll() * (180.0f / kPi) - 90.0f;
+            roll  = _imu.getPitch() * (180.0f / kPi);
+            yaw   = _imu.getYaw() * (180.0f / kPi);
 
-            pitch_rate = imu.getGyroX() * (180.0f / kPi);
-            roll_rate  = imu.getGyroY() * (180.0f / kPi);
-            yaw_rate   = imu.getGyroZ() * (180.0f / kPi);
+            pitch_rate = _imu.getGyroX() * (180.0f / kPi);
+            roll_rate  = _imu.getGyroY() * (180.0f / kPi);
+            yaw_rate   = _imu.getGyroZ() * (180.0f / kPi);
         }
+
+        if (timer.isExpired())
+            _timeout = true;
+    }
+
+    bool getIsTimedOut() {
+        return _timeout;
+    }
+
+    bool getIsDataValid() {
+        return _data_valid;
     }
 
    private:
-    BNO080 imu{};
+    BNO080 _imu{};
+    Timer timer{100};
     bool _data_valid = false;
+    bool _timeout    = false;
 };
 
 }  // namespace odrv
