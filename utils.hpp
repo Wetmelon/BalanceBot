@@ -142,7 +142,7 @@ struct ImuWrapper {
 
    private:
     BNO080 _imu{};
-    Timer timer{100};
+    Timer timer{1000};
     bool _data_valid = false;
     bool _timeout    = false;
 };

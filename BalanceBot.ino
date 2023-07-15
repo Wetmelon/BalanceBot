@@ -101,7 +101,7 @@ void loop() {
                 // If pitch is within 5 degrees for 2 seconds, enable motors
                 if (fabsf(imu.pitch) > 5.0f) {
                     vertical_timer.reset();
-                } else if (vertical_timer.isExpired()) {
+                } else if (vertical_timer.isExpired() && (!imu.getIsTimedOut())) {
                     next_state = State::Active;
 
                     left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
