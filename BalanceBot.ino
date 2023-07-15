@@ -107,8 +107,16 @@ void loop() {
                     left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
                     right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
 
+                    left_motor.set_controller_mode_msg.Control_Mode  = CONTROL_MODE_TORQUE_CONTROL;
+                    right_motor.set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
+                    left_motor.set_controller_mode_msg.Input_Mode    = INPUT_MODE_PASSTHROUGH;
+                    right_motor.set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
+
                     can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
                     can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
+
+                    can_sendMsg(left_motor.encode(ODriveCAN::kSetControllerModeMsg));
+                    can_sendMsg(right_motor.encode(ODriveCAN::kSetControllerModeMsg));
                 }
 
             } break;
