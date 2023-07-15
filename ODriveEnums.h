@@ -45,6 +45,7 @@ enum ODriveAxisState {
     AXIS_STATE_STARTUP_SEQUENCE                  = 2,
     AXIS_STATE_FULL_CALIBRATION_SEQUENCE         = 3,
     AXIS_STATE_MOTOR_CALIBRATION                 = 4,
+    AXIS_STATE_INVALID                           = 5,
     AXIS_STATE_ENCODER_INDEX_SEARCH              = 6,
     AXIS_STATE_ENCODER_OFFSET_CALIBRATION        = 7,
     AXIS_STATE_CLOSED_LOOP_CONTROL               = 8,
@@ -56,12 +57,13 @@ enum ODriveAxisState {
     AXIS_STATE_ANTICOGGING_CALIBRATION           = 14,
 };
 
-constexpr std::array<const char*, 14> ODriveStateStrings = {
+constexpr std::array<const char*, 15> ODriveStateStrings = {
     "UNDEFINED",
     "IDLE",
     "STARTUP_SEQUENCE",
     "FULL_CALIBRATION_SEQUENCE",
     "MOTOR_CALIBRATION",
+    "INVALID",
     "ENCODER_INDEX_SEARCH",
     "ENCODER_OFFSET_CALIBRATION",
     "CLOSED_LOOP_CONTROL",

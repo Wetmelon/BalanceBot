@@ -91,15 +91,22 @@ struct ImuWrapper {
     float yaw        = 0.0f;
     float yaw_rate   = 0.0f;
 
+    float qw, qi, qj, qk;
+
     void begin() {
         // Request the IMU send the rotation vector and IMU at 100Hz
-        imu.begin();
-        imu.enableGameRotationVector(10);  // Gyro and Accel only
+        imu.begin(0x4A);
+        imu.enableRotationVector(50);  // Gyro and Accel only
         // imu.enableGyro(10);
     }
 
     void step() {
         if (imu.dataAvailable()) {
+            qw = imu.getQuatReal();
+            qi = imu.getQuatI();
+            qj = imu.getQuatJ();
+            qk = imu.getQuatK();
+
             roll  = imu.getRoll();
             pitch = imu.getPitch();
             yaw   = imu.getYaw();

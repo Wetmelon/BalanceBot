@@ -172,8 +172,9 @@ void loop() {
 
         Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
-        Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
-        Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
+        Serial.printf("Quat: w: %4.2f, i: %4.2f, j: %4.2f, k: %4.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
+        // Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
+        // Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
         Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
         Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
         Serial.println();
