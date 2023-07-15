@@ -110,17 +110,18 @@ struct ImuWrapper {
 
     void step() {
         if (imu.dataAvailable()) {
-            qw = imu.getQuatReal();
-            qi = imu.getQuatI();
-            qj = imu.getQuatJ();
-            qk = imu.getQuatK();
+            // qw = imu.getQuatReal();
+            // qi = imu.getQuatI();
+            // qj = imu.getQuatJ();
+            // qk = imu.getQuatK();
 
-            roll  = imu.getRoll() * (180.0f / kPi);
-            pitch = imu.getPitch() * (180.0f / kPi) - 90.0f;
+            // Sensor is oriented in such a way that imu roll is vehicle pitch
+            pitch = imu.getRoll() * (180.0f / kPi) - 90.0f;
+            roll  = imu.getPitch() * (180.0f / kPi);
             yaw   = imu.getYaw() * (180.0f / kPi);
 
-            roll_rate  = imu.getGyroX() * (180.0f / kPi);
-            pitch_rate = imu.getGyroY() * (180.0f / kPi);
+            pitch_rate = imu.getGyroX() * (180.0f / kPi);
+            roll_rate  = imu.getGyroY() * (180.0f / kPi);
             yaw_rate   = imu.getGyroZ() * (180.0f / kPi);
         }
     }

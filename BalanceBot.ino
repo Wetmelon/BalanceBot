@@ -117,25 +117,28 @@ void loop() {
                 next_state = State::Active;
 
                 // TODO:  Reset rx_lpf on disable
-                // const CmdPair rx     = getControllerCmds();
-                // const CmdPair rx_lpf = filterCmds(rx);
+                const CmdPair rx     = getControllerCmds();
+                const CmdPair rx_lpf = filterCmds(rx);
 
-                // const float drive_torque = driveControl(rx_lpf.drive);
-                // const float steer_torque = steerControl(rx_lpf.steer);
+                const float drive_torque = driveControl(rx_lpf.drive);
+                const float steer_torque = steerControl(rx_lpf.steer);
 
-                // right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-                // left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+                right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
+                left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
 
-                // if (fabsf(imu.pitch) > 60.0f) {
-                //     vertical_timer.reset();
-                //     next_state = State::Idle;
-                // }
+                if (fabsf(imu.pitch) > 20.0f) {
+                    vertical_timer.reset();
+                    next_state = State::Idle;
+                }
             } break;
 
             case State::Error:
             default: {
                 left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
                 right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+
+                can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
+                can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
 
                 left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
                 right_motor.set_input_torque_msg.Input_Torque = 0.0f;
@@ -209,7 +212,6 @@ void can_sendMsg(const can_Message_t& msg) {
 }
 
 void sendCan() {
-    // Might need to stagger these ~ 1ms
     can_sendMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
     can_sendMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
 }
