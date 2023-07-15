@@ -6,6 +6,8 @@
 #include <CANSAME5x.h>
 #include <Wire.h>
 
+#include <array>
+
 #include "ODriveEnums.h"
 #include "can_simple/can_helpers.hpp"
 #include "can_simple/can_simple_messages.hpp"
@@ -72,6 +74,8 @@ enum class State {
     Error
 };
 
+constexpr std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
+
 void loop() {
     uint32_t start = micros();
     static odrv::Timer loop_timer(10);        // 10ms control loop
@@ -110,18 +114,35 @@ void loop() {
             } break;
 
             case State::Active: {
+                static bool is_active = false;
+
                 left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
                 right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
 
-                // TODO:  Reset rx_lpf on disable
-                const CmdPair rx     = getControllerCmds();
-                const CmdPair rx_lpf = filterCmds(rx);
+                const bool left_closed_loop  = left_motor.heartbeat_msg.Axis_State == AXIS_STATE_CLOSED_LOOP_CONTROL;
+                const bool right_closed_loop = right_motor.heartbeat_msg.Axis_State == AXIS_STATE_CLOSED_LOOP_CONTROL;
 
-                const float drive_torque = driveControl(rx_lpf.drive);
-                const float steer_torque = steerControl(rx_lpf.steer);
+                if (left_closed_loop && right_closed_loop) {
+                    is_active = true;
 
-                right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-                left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+                    // TODO:  Reset rx_lpf on disable
+                    const CmdPair rx     = getControllerCmds();
+                    const CmdPair rx_lpf = filterCmds(rx);
+
+                    const float drive_torque = driveControl(rx_lpf.drive);
+                    const float steer_torque = steerControl(rx_lpf.steer);
+
+                    right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
+                    left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+
+                } else {
+                    right_motor.set_input_torque_msg.Input_Torque = 0.0f;
+                    left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
+                    if (is_active) {
+                        is_active  = false;
+                        next_state = State::Idle;
+                    }
+                }
 
                 if (fabsf(imu.pitch) > 60.0f) {
                     vertical_timer.reset();
@@ -145,14 +166,15 @@ void loop() {
         uint32_t end = micros();
 
 #ifdef DEBUG
-        switch (state) {
-            case State::Idle: Serial.print("Idle"); break;
-            case State::Active: Serial.println("Active"); break;
-            case State::Error: Serial.println("Error"); break;
+        if ((size_t)state < StateStrs.size()) {
+            Serial.println(StateStrs[(size_t)state]);
         }
+
+        Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
+        Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
         Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
         Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
-        // Serial.printf("");
+        Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
         Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
         Serial.println();
 #endif
