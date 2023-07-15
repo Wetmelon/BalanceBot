@@ -6,21 +6,23 @@
 #include <CANSAME5x.h>
 #include <Wire.h>
 
-#include "PIController.hpp"
-#include "SparkFun_BNO080_Arduino_Library.h"
+#include "ODriveEnums.h"
 #include "can_simple/can_helpers.hpp"
 #include "can_simple/can_simple_messages.hpp"
+#include "utils.hpp"
+
+#define DEBUG
 
 // Objects
-BNO080 imu;
+odrv::ImuWrapper imu;
 ODriveCAN left_motor{0};   // Node ID 0
 ODriveCAN right_motor{1};  // Node ID 1
 
 CANSAME5x CAN;
 
-PIControllerClass vel_controller;
-PIControllerClass pitch_controller;
-PIControllerClass pitch_rate_controller;
+odrv::PIControllerClass vel_controller;
+odrv::PIControllerClass pitch_controller;
+odrv::PIControllerClass pitch_rate_controller;
 
 // Constants
 constexpr float kControlLoopPeriod = 0.01f;  // [sec]
@@ -37,6 +39,9 @@ struct CmdPair {
 };
 
 void setup() {
+    // Wait for BNO 085 to boot
+    delay(100);
+
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(PIN_CAN_STANDBY, OUTPUT);
     pinMode(PIN_CAN_BOOSTEN, OUTPUT);
@@ -48,9 +53,9 @@ void setup() {
     Serial.begin(115200);
     Serial.println(F("Connected to serial at 115200 baud."));
 
-    // Start CAN at 250kbps
-    CAN.begin(250000);
-    CAN.onReceive(onCanRx);
+    // Start CAN at 500kbps
+    CAN.begin(500000);
+    CAN.onReceive(can_onReceive);
 
     Serial.println(F("Connected to CAN at 250kbps"));
 
@@ -58,54 +63,120 @@ void setup() {
     Wire.begin();
     Wire.setClock(400000);
 
-    // Request the IMU send the rotation vector and IMU at 100Hz
     imu.begin();
-    imu.enableRotationVector((uint16_t)(kControlLoopPeriod * 1000.0f));
-    imu.enableGyro((uint16_t)(kControlLoopPeriod * 1000.0f));
 }
 
+enum class State {
+    Idle,
+    Active,
+    Error
+};
+
 void loop() {
-    static uint32_t last_run = millis();
+    uint32_t start = micros();
+    static odrv::Timer loop_timer(10);        // 10ms control loop
+    static odrv::Timer vertical_timer{2000};  // 2 sec timer for vertical
+
+    static State state;
+    static State next_state;
 
     // Blink the LED at 1Hz
     blink(1000);
 
     // We run the control loop when there's data available from the IMU (100Hz)
-    const uint32_t now = millis();
-    if ((now - last_run) >= (uint32_t)(kControlLoopPeriod * 1000.0f)) {
-        const CmdPair rx     = getControllerCmds();
-        const CmdPair rx_lpf = filterCmds(rx);
+    if (loop_timer.isExpired()) {
+        loop_timer.reset();
 
-        const float drive_torque = driveControl(rx_lpf.drive);
-        const float steer_torque = steerControl(rx_lpf.steer);
+        state = next_state;
 
-        right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-        left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+        // Read IMU
+        imu.step();
+
+        switch (state) {
+            case State::Idle: {
+                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
+                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+
+                left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
+                right_motor.set_input_torque_msg.Input_Torque = 0.0f;
+
+                // If pitch is within 5 degrees for 2 seconds, enable motors
+                if (fabsf(imu.pitch) > 5.0f) {
+                    vertical_timer.reset();
+                } else if (vertical_timer.isExpired()) {
+                    next_state = State::Active;
+                }
+
+            } break;
+
+            case State::Active: {
+                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
+                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
+
+                // TODO:  Reset rx_lpf on disable
+                const CmdPair rx     = getControllerCmds();
+                const CmdPair rx_lpf = filterCmds(rx);
+
+                const float drive_torque = driveControl(rx_lpf.drive);
+                const float steer_torque = steerControl(rx_lpf.steer);
+
+                right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
+                left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+
+                if (fabsf(imu.pitch) > 60.0f) {
+                    vertical_timer.reset();
+                    next_state = State::Idle;
+                }
+            } break;
+
+            case State::Error:
+            default: {
+                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
+                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+
+                left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
+                right_motor.set_input_torque_msg.Input_Torque = 0.0f;
+
+            } break;
+        }
 
         sendCan();
+
+        uint32_t end = micros();
+
+#ifdef DEBUG
+        switch (state) {
+            case State::Idle: Serial.print("Idle"); break;
+            case State::Active: Serial.println("Active"); break;
+            case State::Error: Serial.println("Error"); break;
+        }
+        Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
+        Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
+        // Serial.printf("");
+        Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
+        Serial.println();
+#endif
     }
 }
 
 float driveControl(const float vel_target) {
     // Pitch angle and rate from IMU
-    const float pitch_angle = imu.getPitch();  // [rad] Pitch angle in world frame
-    const float pitch_rate  = imu.getGyroX();  // [rad/s] Rate of rotation about pitch axis in IMU frame
 
     // Motor speeds
     const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] right wheel speed
     const float vel_left  = left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);   // [m/s] left wheel speed
 
     // TODO:  Verify yaw rate calculation matches gyro reading
-    const float vel_actual = (vel_right + vel_left) / 2.0f - pitch_rate;     // [m/s] Vehicle speed
-    const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);  // [rad/s] Vehicle yaw Rate, per motor sensors
-    const float gyro_yaw   = imu.getGyroZ();                                 // [rad/s] Vehicle yaw rate, per gyro
+    const float vel_actual = (vel_right + vel_left) / 2.0f - imu.pitch_rate;  // [m/s] Vehicle speed
+    const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per motor sensors
+    const float gyro_yaw   = imu.yaw;                                         // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
     const float pitch_cmd      = vel_controller.update(true, vel_target, vel_actual, kControlLoopPeriod);
-    const float pitch_rate_cmd = pitch_controller.update(true, pitch_cmd, pitch_angle, kControlLoopPeriod);
+    const float pitch_rate_cmd = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
 
     // Pitch rate controller outputs an acceleration, and Tau = J * alpha
-    const float torque_cmd = pitch_rate_controller.update(true, pitch_rate_cmd, pitch_rate, kControlLoopPeriod) * kJ;
+    const float torque_cmd = pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
 
     return torque_cmd;
 }
@@ -114,7 +185,7 @@ float steerControl(const float yaw_target) {
     return 0.0f;
 }
 
-void onCanRx(int packetSize) {
+void can_onReceive(int packetSize) {
     can_Message_t rxmsg;
     rxmsg.id = CAN.packetId();
     CAN.readBytes(rxmsg.data, 8);
@@ -126,12 +197,18 @@ void onCanRx(int packetSize) {
     }
 }
 
-void sendCan() {
-    const can_Message_t left_torque_msg  = left_motor.encode(ODriveCAN::kSetInputTorqueMsg);
-    const can_Message_t right_torque_msg = right_motor.encode(ODriveCAN::kSetInputTorqueMsg);
+void can_sendMsg(const can_Message_t& msg) {
+    CAN.beginPacket(msg.id);
+    CAN.write(msg.data, msg.dlc);
+    CAN.endPacket();
+}
 
-    CAN.write(left_torque_msg.data, 8);
-    CAN.write(right_torque_msg.data, 8);
+void sendCan() {
+    // Might need to stagger these ~ 1ms
+    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
+    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
+    can_sendMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
+    can_sendMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
 }
 
 void blink(const uint32_t blink_period_ms) {
