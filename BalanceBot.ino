@@ -137,6 +137,8 @@ void loop() {
                 if (fabsf(imu.pitch) > 20.0f) {
                     vertical_timer.reset();
                     next_state = State::Idle;
+                    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
+                    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
                 }
             } break;
 
