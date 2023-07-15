@@ -103,6 +103,12 @@ void loop() {
                     vertical_timer.reset();
                 } else if (vertical_timer.isExpired()) {
                     next_state = State::Active;
+
+                    left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
+                    right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
+
+                    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
+                    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
                 }
 
             } break;
@@ -110,28 +116,20 @@ void loop() {
             case State::Active: {
                 next_state = State::Active;
 
-                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
-                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
+                // TODO:  Reset rx_lpf on disable
+                // const CmdPair rx     = getControllerCmds();
+                // const CmdPair rx_lpf = filterCmds(rx);
 
-                const bool left_closed_loop  = left_motor.heartbeat_msg.Axis_State == AXIS_STATE_CLOSED_LOOP_CONTROL;
-                const bool right_closed_loop = right_motor.heartbeat_msg.Axis_State == AXIS_STATE_CLOSED_LOOP_CONTROL;
+                // const float drive_torque = driveControl(rx_lpf.drive);
+                // const float steer_torque = steerControl(rx_lpf.steer);
 
-                if (left_closed_loop && right_closed_loop) {
-                    // TODO:  Reset rx_lpf on disable
-                    const CmdPair rx     = getControllerCmds();
-                    const CmdPair rx_lpf = filterCmds(rx);
+                // right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
+                // left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
 
-                    const float drive_torque = driveControl(rx_lpf.drive);
-                    const float steer_torque = steerControl(rx_lpf.steer);
-
-                    right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-                    left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
-                }
-
-                if (fabsf(imu.pitch) > 60.0f) {
-                    vertical_timer.reset();
-                    next_state = State::Idle;
-                }
+                // if (fabsf(imu.pitch) > 60.0f) {
+                //     vertical_timer.reset();
+                //     next_state = State::Idle;
+                // }
             } break;
 
             case State::Error:
@@ -212,8 +210,6 @@ void can_sendMsg(const can_Message_t& msg) {
 
 void sendCan() {
     // Might need to stagger these ~ 1ms
-    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
-    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
     can_sendMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
     can_sendMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
 }
