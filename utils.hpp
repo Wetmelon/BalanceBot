@@ -1,8 +1,12 @@
 #pragma once
 
+#include <Wire.h>
+
 #include <algorithm>
 
 #include "./SparkFun_BNO080_Arduino_Library.h"
+
+constexpr float kPi = PI;
 
 namespace odrv {
 template <class T>
@@ -95,9 +99,13 @@ struct ImuWrapper {
 
     void begin() {
         // Request the IMU send the rotation vector and IMU at 100Hz
+        // Enable i2c at 400kHz
+        Wire.begin();
+
         imu.begin(0x4A);
-        imu.enableRotationVector(50);  // Gyro and Accel only
-        // imu.enableGyro(10);
+        imu.enableRotationVector(10);  // Gyro and Accel only
+
+        Wire.setClock(400000);
     }
 
     void step() {
@@ -107,13 +115,13 @@ struct ImuWrapper {
             qj = imu.getQuatJ();
             qk = imu.getQuatK();
 
-            roll  = imu.getRoll();
-            pitch = imu.getPitch();
-            yaw   = imu.getYaw();
+            roll  = imu.getRoll() * (180.0f / kPi);
+            pitch = imu.getPitch() * (180.0f / kPi) - 90.0f;
+            yaw   = imu.getYaw() * (180.0f / kPi);
 
-            roll_rate  = imu.getGyroX();
-            pitch_rate = imu.getGyroY();
-            yaw_rate   = imu.getGyroZ();
+            roll_rate  = imu.getGyroX() * (180.0f / kPi);
+            pitch_rate = imu.getGyroY() * (180.0f / kPi);
+            yaw_rate   = imu.getGyroZ() * (180.0f / kPi);
         }
     }
 

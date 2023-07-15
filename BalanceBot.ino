@@ -4,7 +4,6 @@
 
 // Adafruit Feather M4 CAN
 #include <CANSAME5x.h>
-#include <Wire.h>
 
 #include <array>
 
@@ -29,7 +28,6 @@ odrv::PIControllerClass pitch_rate_controller;
 // Constants
 constexpr float kControlLoopPeriod = 0.01f;  // [sec]
 constexpr float kRadToDeg          = 360.0 / TWO_PI;
-constexpr float kPi                = PI;
 
 constexpr float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
 constexpr float kTrackWidth    = 1.0f;     // [m] Distance between wheels
@@ -59,11 +57,7 @@ void setup() {
     CAN.begin(500000);
     CAN.onReceive(can_onReceive);
 
-    Serial.println(F("Connected to CAN at 250kbps"));
-
-    // Enable i2c at 400kHz
-    Wire.begin();
-    Wire.setClock(400000);
+    Serial.println(F("Connected to CAN at 500kbps"));
 
     imu.begin();
 }
@@ -114,7 +108,7 @@ void loop() {
             } break;
 
             case State::Active: {
-                static bool is_active = false;
+                next_state = State::Active;
 
                 left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
                 right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
@@ -123,8 +117,6 @@ void loop() {
                 const bool right_closed_loop = right_motor.heartbeat_msg.Axis_State == AXIS_STATE_CLOSED_LOOP_CONTROL;
 
                 if (left_closed_loop && right_closed_loop) {
-                    is_active = true;
-
                     // TODO:  Reset rx_lpf on disable
                     const CmdPair rx     = getControllerCmds();
                     const CmdPair rx_lpf = filterCmds(rx);
@@ -134,14 +126,6 @@ void loop() {
 
                     right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
                     left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
-
-                } else {
-                    right_motor.set_input_torque_msg.Input_Torque = 0.0f;
-                    left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
-                    if (is_active) {
-                        is_active  = false;
-                        next_state = State::Idle;
-                    }
                 }
 
                 if (fabsf(imu.pitch) > 60.0f) {
@@ -172,8 +156,8 @@ void loop() {
 
         Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
-        Serial.printf("Quat: w: %4.2f, i: %4.2f, j: %4.2f, k: %4.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
-        // Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
+        // Serial.printf("Quat: w: %4.2f, i: %4.2f, j: %4.2f, k: %4.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
+        Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
         // Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
         Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
         Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
