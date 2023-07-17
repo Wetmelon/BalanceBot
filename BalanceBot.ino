@@ -31,7 +31,7 @@ constexpr float kRadToDeg          = 360.0 / TWO_PI;
 
 constexpr float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
 constexpr float kTrackWidth    = 1.0f;     // [m] Distance between wheels
-constexpr float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
+constexpr float kJ             = 2.0f;     // [Nm/(rad/s^2)] Rotational inertia
 
 struct CmdPair {
     float drive;
@@ -81,6 +81,7 @@ void loop() {
     // Blink the LED at 1Hz
     blink(1000);
 
+        imu.step();
     // We run the control loop when there's data available from the IMU (100Hz)
     if (loop_timer.isExpired()) {
         loop_timer.reset();
@@ -88,7 +89,6 @@ void loop() {
         state = next_state;
 
         // Read IMU
-        imu.step();
 
         switch (state) {
             case State::Idle: {
@@ -157,7 +157,7 @@ void loop() {
                     const float steer_torque = steerControl(rx_lpf.steer);
 
                     right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-                    left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * 0.5f;
+                    left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * -0.5f;
                 }
 
             } break;
@@ -181,18 +181,18 @@ void loop() {
         uint32_t end = micros();
 
 #ifdef DEBUG
-        if ((size_t)state < StateStrs.size()) {
-            Serial.println(StateStrs[(size_t)state]);
-        }
+        // if ((size_t)state < StateStrs.size()) {
+        //     Serial.println(StateStrs[(size_t)state]);
+        // }
 
-        Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
-        Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
+        // Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
+        // Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("Quat: w: %4.2f, i: %4.2f, j: %4.2f, k: %4.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
-        Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
+        // Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
         // Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
-        Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
+        // Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, -1.0f * right_motor.get_encoder_estimates_msg.Vel_Estimate);
         Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
-        Serial.println();
+        // Serial.println();
 #endif
     }
 }
@@ -202,19 +202,39 @@ float driveControl(const float vel_target) {
 
     // Motor speeds
     const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] right wheel speed
-    const float vel_left  = left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);   // [m/s] left wheel speed
+    const float vel_left  = -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);   // [m/s] left wheel speed
 
     // TODO:  Verify yaw rate calculation matches gyro reading
-    const float vel_actual = (vel_right + vel_left) / 2.0f - imu.pitch_rate;  // [m/s] Vehicle speed
-    const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per motor sensors
+    const float vel_actual = (vel_right + vel_left) / 2.0f;//  - imu.pitch_rate;  // [m/s] Vehicle speed
+    // const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per motor sensors
+    const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per IMU
     const float gyro_yaw   = imu.yaw;                                         // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
-    const float pitch_cmd      = vel_controller.update(true, vel_target, vel_actual, kControlLoopPeriod);
-    const float pitch_rate_cmd = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
+    vel_controller.settings.output_min = -10.0f;
+    vel_controller.settings.output_max = 10.0f;
+    vel_controller.settings.Ki = 0.1f;
+    const float pitch_cmd      = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
+
+    pitch_controller.settings.Kp = 0.25f;
+    pitch_controller.settings.Ki = 0.0f;
+    pitch_controller.settings.output_min = -10.0f;
+    pitch_controller.settings.output_max = 10.0f;
+    const float torque_cmd = -1.0f * pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
+
 
     // Pitch rate controller outputs an acceleration, and Tau = J * alpha
-    const float torque_cmd = pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
+    // pitch_rate_controller.settings.Kp = 0.1f;
+    // pitch_rate_controller.settings.Ki = 0.01f;
+    // const float torque_cmd = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
+
+#ifdef DEBUG
+    // Serial.println("driveControl vals");
+    Serial.printf("vel_actual: %4.2f\n", vel_actual);
+    // Serial.printf("TP: %4.2f AP: %4.2f EP: %4.2f\n", 0.0f, imu.pitch, -imu.pitch);
+    // Serial.printf("TR: %4.2f AR: %4.2f ER: %4.2f\n", pitch_rate_cmd, imu.pitch_rate, pitch_rate_cmd - imu.pitch_rate);
+    // Serial.println();
+#endif
 
     return torque_cmd;
 }

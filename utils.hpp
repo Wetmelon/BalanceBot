@@ -33,9 +33,9 @@ struct lpf {
 
 struct PIControllerClass {
     struct Settings_t {
-        float iterm_min  = -0.1f;
-        float iterm_max  = 0.1f;
-        float output_min = 1.0f;
+        float iterm_min  = -1.0f;
+        float iterm_max  = 1.0f;
+        float output_min = -1.0f;
         float output_max = 1.0f;
 
         float Kp = 1.0f;
@@ -104,6 +104,7 @@ struct ImuWrapper {
 
         _imu.begin(0x4A);
         _imu.enableRotationVector(10);  // Gyro and Accel only
+        _imu.enableGyro(10);
 
         Wire.setClock(400000);
     }
@@ -142,7 +143,7 @@ struct ImuWrapper {
 
    private:
     BNO080 _imu{};
-    Timer timer{100};
+    Timer timer{1000};
     bool _data_valid = false;
     bool _timeout    = false;
 };
