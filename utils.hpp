@@ -33,10 +33,10 @@ struct lpf {
 
 struct PIControllerClass {
     struct Settings_t {
-        float iterm_min  = -1.0f;
-        float iterm_max  = 1.0f;
-        float output_min = -1.0f;
-        float output_max = 1.0f;
+        float iterm_min  = -100.0f;
+        float iterm_max  = 100.0f;
+        float output_min = -100.0f;
+        float output_max = 100.0f;
 
         float Kp = 1.0f;
         float Ki = 0.0f;

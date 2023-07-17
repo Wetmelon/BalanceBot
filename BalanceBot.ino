@@ -211,15 +211,12 @@ float driveControl(const float vel_target) {
     const float gyro_yaw   = imu.yaw;                                         // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
-    vel_controller.settings.output_min = -10.0f;
-    vel_controller.settings.output_max = 10.0f;
+    vel_controller.settings.Kp = 1.0f;
     vel_controller.settings.Ki = 0.1f;
     const float pitch_cmd      = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
 
     pitch_controller.settings.Kp = 0.25f;
     pitch_controller.settings.Ki = 0.0f;
-    pitch_controller.settings.output_min = -10.0f;
-    pitch_controller.settings.output_max = 10.0f;
     const float torque_cmd = -1.0f * pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
 
 
