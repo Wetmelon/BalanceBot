@@ -14,6 +14,19 @@ constexpr const T& clamp(const T& x, const T& lo, const T& hi) {
     return std::min(std::max(x, lo), hi);
 }
 
+void blink(const uint32_t blink_period_ms) {
+    static uint32_t last_blink = millis();
+    static bool led_state      = false;
+
+    const uint32_t now = millis();
+    if ((now - last_blink) >= (blink_period_ms / 2UL)) {
+        last_blink = now;
+        led_state  = !led_state;
+
+        digitalWrite(LED_BUILTIN, led_state ? HIGH : LOW);
+    }
+}
+
 struct lpf {
     lpf(float Ts, float Tau) : _alpha(Ts / (Ts + Tau)) {}
 
@@ -58,8 +71,8 @@ struct PIControllerClass {
     }
 
    private:
-    float i_term      = 0;
-    float last_actual = 0;
+    float i_term      = 0.0f;
+    float last_actual = 0.0f;
 };
 
 struct Timer {
@@ -102,14 +115,34 @@ struct ImuWrapper {
         // Enable i2c at 400kHz
         Wire.begin();
 
-        _imu.begin(0x4A);
-        _imu.enableRotationVector(10);  // Gyro and Accel only
-        _imu.enableGyro(10);
+        // Flush potentially stuck comms
+        Wire.endTransmission();
+        Wire.endTransmission();
+
+        Serial.println("Wire started");
+
+        _imu.enableDebugging(Serial);
+
+        digitalWrite(11, HIGH);
+
+        while (!_imu.begin(0x4A)) {
+            blink(500);
+            delay(10);
+        };
+
+        Serial.println("IMU started");
 
         Wire.setClock(400000);
+
+        // _imu.enableReport(SH2_GAME_ROTATION_VECTOR);
+        // _imu.enableReport(SH2_GYROSCOPE_CALIBRATED);
+        _imu.enableGameRotationVector(10);  // Gyro and Accel only
+        _imu.enableGyro(10);
+
+        Serial.println("Wire clock set");
     }
 
-    void step() {
+    void read() {
         _data_valid = false;
         if (_imu.dataAvailable()) {
             timer.reset();

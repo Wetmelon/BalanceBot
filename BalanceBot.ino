@@ -3,6 +3,7 @@
 // #include <Arduino_CAN.h>
 
 // Adafruit Feather M4 CAN
+#include <Adafruit_NeoPixel.h>
 #include <CANSAME5x.h>
 
 #include <array>
@@ -15,6 +16,8 @@
 #define DEBUG
 
 // Objects
+Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
+
 odrv::ImuWrapper imu;
 ODriveCAN left_motor{0};   // Node ID 0
 ODriveCAN right_motor{1};  // Node ID 1
@@ -45,21 +48,29 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(PIN_CAN_STANDBY, OUTPUT);
     pinMode(PIN_CAN_BOOSTEN, OUTPUT);
+    pinMode(11, OUTPUT);
 
     // Enable CAN transceiver
     digitalWrite(PIN_CAN_STANDBY, false);  // turn off STANDBY
     digitalWrite(PIN_CAN_BOOSTEN, true);   // turn on booster
+    digitalWrite(11, LOW);
 
     Serial.begin(115200);
-    Serial.println(F("Connected to serial at 115200 baud."));
+    // while (!Serial) {
+    //     delay(1);
+    // }
+
+    Serial.println("Connected to serial at 115200 baud.");
 
     // Start CAN at 500kbps
     CAN.begin(500000);
     CAN.onReceive(can_onReceive);
 
-    Serial.println(F("Connected to CAN at 500kbps"));
+    Serial.println("Connected to CAN at 500kbps");
 
     imu.begin();
+
+    Serial.println("Connected to IMU at 400kHz");
 }
 
 enum class State {
@@ -79,16 +90,17 @@ void loop() {
     static State next_state;
 
     // Blink the LED at 1Hz
-    blink(1000);
+    odrv::blink(1000);
 
-        imu.step();
+    // Read IMU
+    imu.read();
+
     // We run the control loop when there's data available from the IMU (100Hz)
     if (loop_timer.isExpired()) {
+        // Serial.printf("Loop\n");
         loop_timer.reset();
 
         state = next_state;
-
-        // Read IMU
 
         switch (state) {
             case State::Idle: {
@@ -156,8 +168,8 @@ void loop() {
                     const float drive_torque = driveControl(rx_lpf.drive);
                     const float steer_torque = steerControl(rx_lpf.steer);
 
-                    right_motor.set_input_torque_msg.Input_Torque = (drive_torque + steer_torque) * 0.5f;
-                    left_motor.set_input_torque_msg.Input_Torque  = (drive_torque - steer_torque) * -0.5f;
+                    right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
+                    left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
                 }
 
             } break;
@@ -187,11 +199,11 @@ void loop() {
 
         // Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
-        // Serial.printf("Quat: w: %4.2f, i: %4.2f, j: %4.2f, k: %4.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
-        // Serial.printf("Angles R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll, imu.pitch, imu.yaw);
-        // Serial.printf("Rates  R: %4.2f P: %4.2f Y: %4.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
-        // Serial.printf("Speeds L: %4.2f R: %4.2f\n", left_motor.get_encoder_estimates_msg.Vel_Estimate, -1.0f * right_motor.get_encoder_estimates_msg.Vel_Estimate);
-        Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
+        // Serial.printf("Quat: w: % 06.2f, i: % 06.2f, j: % 06.2f, k: % 06.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
+        // Serial.printf("Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
+        // Serial.printf("Rates  R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
+        // Serial.printf("Speeds L: % 06.2f R: % 06.2f\n", -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
+        // Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
         // Serial.println();
 #endif
     }
@@ -201,35 +213,33 @@ float driveControl(const float vel_target) {
     // Pitch angle and rate from IMU
 
     // Motor speeds
-    const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] right wheel speed
-    const float vel_left  = -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);   // [m/s] left wheel speed
+    const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);         // [m/s] right wheel speed
+    const float vel_left  = -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] left wheel speed
 
     // TODO:  Verify yaw rate calculation matches gyro reading
-    const float vel_actual = (vel_right + vel_left) / 2.0f;//  - imu.pitch_rate;  // [m/s] Vehicle speed
-    // const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per motor sensors
-    const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);   // [rad/s] Vehicle yaw Rate, per IMU
-    const float gyro_yaw   = imu.yaw;                                         // [rad/s] Vehicle yaw rate, per gyro
+    const float vel_actual = (vel_right + vel_left) / 2.0f;  //  - imu.pitch_rate;  // [m/s] Vehicle speed
+    // const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);  // [rad/s] Vehicle yaw Rate, per motor sensors
+    // const float gyro_yaw   = imu.yaw;                                        // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
     vel_controller.settings.Kp = 1.0f;
-    vel_controller.settings.Ki = 0.1f;
-    const float pitch_cmd      = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
+    vel_controller.settings.Ki = 1.0f;
+    const float pitch_cmd     = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
 
-    pitch_controller.settings.Kp = 0.25f;
-    pitch_controller.settings.Ki = 0.0f;
-    const float torque_cmd = -1.0f * pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
-
+    pitch_controller.settings.Kp = 1.0f;
+    pitch_controller.settings.Ki = 1.0f;
+    const float pitch_rate_cmd   = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
 
     // Pitch rate controller outputs an acceleration, and Tau = J * alpha
-    // pitch_rate_controller.settings.Kp = 0.1f;
-    // pitch_rate_controller.settings.Ki = 0.01f;
-    // const float torque_cmd = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
+    pitch_rate_controller.settings.Kp = 0.1f;
+    pitch_rate_controller.settings.Ki = 0.0f;
+    const float torque_cmd            = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
 
 #ifdef DEBUG
     // Serial.println("driveControl vals");
-    Serial.printf("vel_actual: %4.2f\n", vel_actual);
-    // Serial.printf("TP: %4.2f AP: %4.2f EP: %4.2f\n", 0.0f, imu.pitch, -imu.pitch);
-    // Serial.printf("TR: %4.2f AR: %4.2f ER: %4.2f\n", pitch_rate_cmd, imu.pitch_rate, pitch_rate_cmd - imu.pitch_rate);
+    // Serial.printf("Vel: % 06.2f Cmd: % 06.2f\n", vel_actual, torque_cmd);
+    Serial.printf("P: % 06.2f PRcmd: % 06.2f\n", imu.pitch, pitch_rate_cmd);
+    // Serial.printf("PR: % 06.2f Cmd: % 06.2f\n", imu.pitch_rate, torque_cmd);
     // Serial.println();
 #endif
 
@@ -261,19 +271,6 @@ void can_sendMsg(const can_Message_t& msg) {
 void sendCan() {
     can_sendMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
     can_sendMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
-}
-
-void blink(const uint32_t blink_period_ms) {
-    static uint32_t last_blink = millis();
-    static bool led_state      = false;
-
-    const uint32_t now = millis();
-    if ((now - last_blink) >= (blink_period_ms / 2UL)) {
-        last_blink = now;
-        led_state  = !led_state;
-
-        digitalWrite(LED_BUILTIN, led_state ? HIGH : LOW);
-    }
 }
 
 CmdPair filterCmds(const CmdPair& rx) {
