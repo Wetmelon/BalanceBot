@@ -71,6 +71,7 @@ void setup() {
     imu.begin();
 
     Serial.println("Connected to IMU at 400kHz");
+    Serial.println("Vel,Pcmd,Pitch,RateCmd,Rate,TorqueCmd");
 }
 
 enum class State {
@@ -225,8 +226,8 @@ float driveControl(const float vel_target) {
     // const float gyro_yaw   = imu.yaw;                                        // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
-    vel_controller.settings.Kp = 100.0f;
-    vel_controller.settings.Ki = 100.0f;
+    vel_controller.settings.Kp = 10.0f;
+    vel_controller.settings.Ki = 1.0f;
 
     vel_controller.settings.iterm_min  = -10.0f;  // [deg]
     vel_controller.settings.output_min = -10.0f;  // [deg]
@@ -256,12 +257,12 @@ float driveControl(const float vel_target) {
     const float torque_cmd = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
 
 #ifdef DEBUG
-    // Serial.println("driveControl vals");
-    Serial.printf("V: % 06.2f Pcmd: % 06.2f P: % 06.2f Rcmd: % 06.2f R: % 06.2f T: % 06.2f\n",
+
+    // Serial.printf("V: % 06.2f Pcmd: % 06.2f P: % 06.2f Rcmd: % 06.2f R: % 06.2f T: % 06.2f\n",
+    //               vel_actual, pitch_cmd, imu.pitch, pitch_rate_cmd, imu.pitch_rate, torque_cmd);
+    Serial.printf("% 06.2f,% 06.2f,% 06.2f,% 06.2f,% 06.2f,% 06.2f\n",
                   vel_actual, pitch_cmd, imu.pitch, pitch_rate_cmd, imu.pitch_rate, torque_cmd);
-    // Serial.printf("P: % 06.2f PRcmd: % 06.2f\n", imu.pitch, pitch_rate_cmd);
-    // Serial.printf("PR: % 06.2f Cmd: % 06.2f\n", imu.pitch_rate, torque_cmd);
-    // Serial.println();
+
 #endif
 
     return torque_cmd;
