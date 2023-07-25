@@ -46,10 +46,10 @@ struct lpf {
 
 struct PIControllerClass {
     struct Settings_t {
-        float iterm_min  = -100.0f;
-        float iterm_max  = 100.0f;
-        float output_min = -100.0f;
-        float output_max = 100.0f;
+        float iterm_min  = -1.0f;
+        float iterm_max  = 1.0f;
+        float output_min = -1.0f;
+        float output_max = 1.0f;
 
         float Kp = 1.0f;
         float Ki = 0.0f;
@@ -137,7 +137,7 @@ struct ImuWrapper {
         // _imu.enableReport(SH2_GAME_ROTATION_VECTOR);
         // _imu.enableReport(SH2_GYROSCOPE_CALIBRATED);
         _imu.enableGameRotationVector(10);  // Gyro and Accel only
-        _imu.enableGyro(10);
+        _imu.enableUncalibratedGyro(10);
 
         Serial.println("Wire clock set");
     }
@@ -157,9 +157,9 @@ struct ImuWrapper {
             roll  = _imu.getPitch() * (180.0f / kPi);
             yaw   = _imu.getYaw() * (180.0f / kPi);
 
-            pitch_rate = _imu.getGyroX() * (180.0f / kPi);
-            roll_rate  = _imu.getGyroY() * (180.0f / kPi);
-            yaw_rate   = _imu.getGyroZ() * (180.0f / kPi);
+            pitch_rate = _imu.getUncalibratedGyroX() * (180.0f / kPi);
+            roll_rate  = _imu.getUncalibratedGyroY() * (180.0f / kPi);
+            yaw_rate   = _imu.getUncalibratedGyroZ() * (180.0f / kPi);
         }
 
         if (timer.isExpired())

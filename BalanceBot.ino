@@ -34,7 +34,7 @@ constexpr float kRadToDeg          = 360.0 / TWO_PI;
 
 constexpr float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
 constexpr float kTrackWidth    = 1.0f;     // [m] Distance between wheels
-constexpr float kJ             = 2.0f;     // [Nm/(rad/s^2)] Rotational inertia
+constexpr float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
 
 struct CmdPair {
     float drive;
@@ -152,7 +152,10 @@ void loop() {
                 bool pitch_over  = fabsf(imu.pitch) > 20.0f;
                 bool imu_timeout = imu.getIsTimedOut();
 
-                if (pitch_over || imu_timeout) {
+                bool left_error  = left_motor.heartbeat_msg.Axis_Error != 0;
+                bool right_error = right_motor.heartbeat_msg.Axis_Error != 0;
+
+                if (pitch_over || imu_timeout || left_error || right_error) {
                     vertical_timer.reset();
                     next_state = State::Idle;
 
@@ -222,23 +225,41 @@ float driveControl(const float vel_target) {
     // const float gyro_yaw   = imu.yaw;                                        // [rad/s] Vehicle yaw rate, per gyro
 
     // Run P/PI/P control loop
-    vel_controller.settings.Kp = 1.0f;
-    vel_controller.settings.Ki = 1.0f;
-    const float pitch_cmd     = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
+    vel_controller.settings.Kp = 100.0f;
+    vel_controller.settings.Ki = 100.0f;
 
-    pitch_controller.settings.Kp = 1.0f;
-    pitch_controller.settings.Ki = 1.0f;
-    const float pitch_rate_cmd   = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
+    vel_controller.settings.iterm_min  = -10.0f;  // [deg]
+    vel_controller.settings.output_min = -10.0f;  // [deg]
+
+    vel_controller.settings.iterm_max  = 10.0f;  // [deg]
+    vel_controller.settings.output_max = 10.0f;  // [deg]
+
+    const float pitch_cmd = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
+
+    pitch_controller.settings.Kp = 10.0f;
+    pitch_controller.settings.Ki = 10.0f;
+
+    pitch_controller.settings.iterm_min  = -100.0f;  // [deg/s]
+    pitch_controller.settings.iterm_max  = 100.0f;   // [deg/s]
+    pitch_controller.settings.output_min = -100.0f;  // [deg/s]
+    pitch_controller.settings.output_max = 100.0f;   // [deg/s]
+
+    const float pitch_rate_cmd = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
 
     // Pitch rate controller outputs an acceleration, and Tau = J * alpha
     pitch_rate_controller.settings.Kp = 0.1f;
     pitch_rate_controller.settings.Ki = 0.0f;
-    const float torque_cmd            = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
+
+    pitch_rate_controller.settings.output_min = -10.0f;  // [Nm]
+    pitch_rate_controller.settings.output_max = 10.0f;   // [Nm]
+
+    const float torque_cmd = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
 
 #ifdef DEBUG
     // Serial.println("driveControl vals");
-    // Serial.printf("Vel: % 06.2f Cmd: % 06.2f\n", vel_actual, torque_cmd);
-    Serial.printf("P: % 06.2f PRcmd: % 06.2f\n", imu.pitch, pitch_rate_cmd);
+    Serial.printf("V: % 06.2f Pcmd: % 06.2f P: % 06.2f Rcmd: % 06.2f R: % 06.2f T: % 06.2f\n",
+                  vel_actual, pitch_cmd, imu.pitch, pitch_rate_cmd, imu.pitch_rate, torque_cmd);
+    // Serial.printf("P: % 06.2f PRcmd: % 06.2f\n", imu.pitch, pitch_rate_cmd);
     // Serial.printf("PR: % 06.2f Cmd: % 06.2f\n", imu.pitch_rate, torque_cmd);
     // Serial.println();
 #endif
