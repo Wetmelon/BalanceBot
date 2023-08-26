@@ -19,6 +19,7 @@
 Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
 
 odrv::ImuWrapper imu;
+
 ODriveCAN left_motor{0};   // Node ID 0
 ODriveCAN right_motor{1};  // Node ID 1
 
@@ -84,6 +85,7 @@ constexpr std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
 
 void loop() {
     uint32_t start = micros();
+
     static odrv::Timer loop_timer(10);        // 10ms control loop
     static odrv::Timer vertical_timer{2000};  // 2 sec timer for vertical
 
@@ -204,7 +206,7 @@ void loop() {
         // Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("Quat: w: % 06.2f, i: % 06.2f, j: % 06.2f, k: % 06.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
-        // Serial.printf("Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
+        Serial.printf("Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
         // Serial.printf("Rates  R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
         // Serial.printf("Speeds L: % 06.2f R: % 06.2f\n", -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
         // Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
