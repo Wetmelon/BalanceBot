@@ -30,17 +30,24 @@ odrv::PIControllerClass pitch_controller;
 odrv::PIControllerClass pitch_rate_controller;
 
 // Constants
-constexpr float kControlLoopPeriod = 0.01f;  // [sec]
-constexpr float kRadToDeg          = 360.0 / TWO_PI;
+const float kControlLoopPeriod = 0.01f;  // [sec]
 
-constexpr float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
-constexpr float kTrackWidth    = 1.0f;     // [m] Distance between wheels
-constexpr float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
+const float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
+const float kTrackWidth    = 1.0f;     // [m] Distance between wheels
+const float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
 
 struct CmdPair {
     float drive;
     float steer;
 };
+
+enum class State {
+    Idle,
+    Active,
+    Error
+};
+
+const std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
 
 void setup() {
     // Wait for BNO 085 to boot
@@ -73,24 +80,26 @@ void setup() {
 
     Serial.println("Connected to IMU at 400kHz");
     Serial.println("Vel,Pcmd,Pitch,RateCmd,Rate,TorqueCmd");
+
+    // Setup our desired control and input modes
+    left_motor.set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
+    left_motor.set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
+
+    right_motor.set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
+    right_motor.set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
+
+    // Setup the velocity and current limits that we'll use
+    left_motor.set_limits_msg.Velocity_Limit = 1000.0f;
+    left_motor.set_limits_msg.Current_Limit  = 40.0f;
+
+    right_motor.set_limits_msg.Velocity_Limit = 1000.0f;
+    right_motor.set_limits_msg.Current_Limit  = 40.0f;
 }
-
-enum class State {
-    Idle,
-    Active,
-    Error
-};
-
-constexpr std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
 
 void loop() {
     uint32_t start = micros();
 
-    static odrv::Timer loop_timer(10);        // 10ms control loop
-    static odrv::Timer vertical_timer{2000};  // 2 sec timer for vertical
-
-    static State state;
-    static State next_state;
+    static State state = State::Idle;
 
     // Blink the LED at 1Hz
     odrv::blink(1000);
@@ -99,102 +108,29 @@ void loop() {
     imu.read();
 
     // We run the control loop when there's data available from the IMU (100Hz)
+    static odrv::Timer loop_timer(10);  // 10ms control loop
     if (loop_timer.isExpired()) {
-        // Serial.printf("Loop\n");
         loop_timer.reset();
 
-        state = next_state;
+        // State Machine
+        state = run_state_machine(state);
 
-        switch (state) {
-            case State::Idle: {
-                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
-                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
+        // TODO:  Reset rx_lpf on disable
+        CmdPair rx     = getControllerCmds();
+        CmdPair rx_lpf = filterCmds(rx);
 
-                left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
-                right_motor.set_input_torque_msg.Input_Torque = 0.0f;
+        float drive_torque = driveControl(rx_lpf.drive, state == State::Active);
+        float steer_torque = steerControl(rx_lpf.steer);
 
-                // If pitch is within 5 degrees for 2 seconds, enable motors
-                if (fabsf(imu.pitch) > 5.0f) {
-                    vertical_timer.reset();
-                } else if (vertical_timer.isExpired() && (!imu.getIsTimedOut())) {
-                    next_state = State::Active;
+        right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
+        left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
 
-                    left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_CLOSED_LOOP_CONTROL;
-                    right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_CLOSED_LOOP_CONTROL;
-
-                    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
-                    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
-
-                    left_motor.set_controller_mode_msg.Control_Mode  = CONTROL_MODE_TORQUE_CONTROL;
-                    right_motor.set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
-                    left_motor.set_controller_mode_msg.Input_Mode    = INPUT_MODE_PASSTHROUGH;
-                    right_motor.set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
-
-                    can_sendMsg(left_motor.encode(ODriveCAN::kSetControllerModeMsg));
-                    can_sendMsg(right_motor.encode(ODriveCAN::kSetControllerModeMsg));
-
-                    left_motor.set_limits_msg.Velocity_Limit  = 1000.0f;
-                    right_motor.set_limits_msg.Velocity_Limit = 1000.0f;
-                    left_motor.set_limits_msg.Current_Limit   = 40.0f;
-                    right_motor.set_limits_msg.Current_Limit  = 40.0f;
-
-                    can_sendMsg(left_motor.encode(ODriveCAN::kSetLimitsMsg));
-                    can_sendMsg(right_motor.encode(ODriveCAN::kSetLimitsMsg));
-                }
-
-            } break;
-
-            case State::Active: {
-                next_state = State::Active;
-
-                // TODO:  Reset rx_lpf on disable
-                const CmdPair rx     = getControllerCmds();
-                const CmdPair rx_lpf = filterCmds(rx);
-
-                // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 20.0f;
-                bool imu_timeout = imu.getIsTimedOut();
-
-                bool left_error  = left_motor.heartbeat_msg.Axis_Error != 0;
-                bool right_error = right_motor.heartbeat_msg.Axis_Error != 0;
-
-                if (pitch_over || imu_timeout || left_error || right_error) {
-                    vertical_timer.reset();
-                    next_state = State::Idle;
-
-                    left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
-                    right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
-
-                    can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
-                    can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
-
-                    right_motor.set_input_torque_msg.Input_Torque = 0.0f;
-                    left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
-                } else {
-                    const float drive_torque = driveControl(rx_lpf.drive);
-                    const float steer_torque = steerControl(rx_lpf.steer);
-
-                    right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
-                    left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
-                }
-
-            } break;
-
-            case State::Error:
-            default: {
-                left_motor.set_axis_state_msg.Axis_Requested_State  = AXIS_STATE_IDLE;
-                right_motor.set_axis_state_msg.Axis_Requested_State = AXIS_STATE_IDLE;
-
-                can_sendMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
-                can_sendMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
-
-                left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
-                right_motor.set_input_torque_msg.Input_Torque = 0.0f;
-
-            } break;
+        if (state != State::Active) {
+            right_motor.set_input_torque_msg.Input_Torque = 0.0f;
+            left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        sendCan();
+        sendCyclic();
 
         uint32_t end = micros();
 
@@ -215,7 +151,50 @@ void loop() {
     }
 }
 
-float driveControl(const float vel_target) {
+State run_state_machine(State state) {
+    static odrv::Timer vertical_timer{2000};  // 2 sec timer for vertical
+
+    State next_state = state;
+
+    switch (state) {
+        case State::Idle: {
+            // If pitch is within 5 degrees for 2 seconds, enable motors
+            if (fabsf(imu.pitch) > 5.0f) {
+                vertical_timer.reset();
+            } else if (vertical_timer.isExpired() && (!imu.getIsTimedOut())) {
+                setAxisStates(AXIS_STATE_CLOSED_LOOP_CONTROL);
+                next_state = State::Active;
+            }
+
+        } break;
+
+        case State::Active: {
+            // Check for errors
+            bool pitch_over  = fabsf(imu.pitch) > 20.0f;
+            bool imu_timeout = imu.getIsTimedOut();
+
+            bool left_error  = left_motor.heartbeat_msg.Axis_Error != 0;
+            bool right_error = right_motor.heartbeat_msg.Axis_Error != 0;
+
+            if (pitch_over || imu_timeout || left_error || right_error) {
+                vertical_timer.reset();
+
+                setAxisStates(AXIS_STATE_IDLE);
+                next_state = State::Idle;
+            }
+
+        } break;
+
+        case State::Error:
+        default: {
+            setAxisStates(AXIS_STATE_IDLE);
+        } break;
+    }
+
+    return next_state;
+}
+
+float driveControl(const float vel_target, bool enable) {
     // Pitch angle and rate from IMU
 
     // Motor speeds
@@ -237,7 +216,7 @@ float driveControl(const float vel_target) {
     vel_controller.settings.iterm_max  = 10.0f;  // [deg]
     vel_controller.settings.output_max = 10.0f;  // [deg]
 
-    const float pitch_cmd = vel_controller.update(true, 0.0f, vel_actual, kControlLoopPeriod);
+    const float pitch_cmd = vel_controller.update(enable, 0.0f, vel_actual, kControlLoopPeriod);
 
     pitch_controller.settings.Kp = 10.0f;
     pitch_controller.settings.Ki = 10.0f;
@@ -247,7 +226,7 @@ float driveControl(const float vel_target) {
     pitch_controller.settings.output_min = -100.0f;  // [deg/s]
     pitch_controller.settings.output_max = 100.0f;   // [deg/s]
 
-    const float pitch_rate_cmd = pitch_controller.update(true, pitch_cmd, imu.pitch, kControlLoopPeriod);
+    const float pitch_rate_cmd = pitch_controller.update(enable, pitch_cmd, imu.pitch, kControlLoopPeriod);
 
     // Pitch rate controller outputs an acceleration, and Tau = J * alpha
     pitch_rate_controller.settings.Kp = 0.1f;
@@ -256,7 +235,7 @@ float driveControl(const float vel_target) {
     pitch_rate_controller.settings.output_min = -10.0f;  // [Nm]
     pitch_rate_controller.settings.output_max = 10.0f;   // [Nm]
 
-    const float torque_cmd = -1.0f * pitch_rate_controller.update(true, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
+    const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
 
 #ifdef DEBUG
 
@@ -279,22 +258,36 @@ void can_onReceive(int packetSize) {
     rxmsg.id = CAN.packetId();
     CAN.readBytes(rxmsg.data, 8);
 
-    switch (rxmsg.id >> ODriveCAN::kNumCmdIdBits) {
+    switch (ODriveCAN::get_node_id(rxmsg.id)) {
         case 0: left_motor.decode(rxmsg); break;
         case 1: right_motor.decode(rxmsg); break;
         default: break;
     }
 }
 
-void can_sendMsg(const can_Message_t& msg) {
+void sendCanMsg(const can_Message_t& msg) {
     CAN.beginPacket(msg.id);
     CAN.write(msg.data, msg.dlc);
     CAN.endPacket();
 }
 
-void sendCan() {
-    can_sendMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
-    can_sendMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
+void setAxisStates(ODriveAxisState state) {
+    left_motor.set_axis_state_msg.Axis_Requested_State  = state;
+    right_motor.set_axis_state_msg.Axis_Requested_State = state;
+
+    sendCanMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
+    sendCanMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
+}
+
+void sendCyclic() {
+    sendCanMsg(left_motor.encode(ODriveCAN::kSetControllerModeMsg));
+    sendCanMsg(right_motor.encode(ODriveCAN::kSetControllerModeMsg));
+
+    sendCanMsg(left_motor.encode(ODriveCAN::kSetLimitsMsg));
+    sendCanMsg(right_motor.encode(ODriveCAN::kSetLimitsMsg));
+
+    sendCanMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
+    sendCanMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
 }
 
 CmdPair filterCmds(const CmdPair& rx) {

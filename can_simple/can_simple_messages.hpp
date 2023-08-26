@@ -718,7 +718,7 @@ struct ODriveCAN {
 
     can_Message_t encode(const CmdList cmd) const {
         can_Message_t msg;
-        msg.id  = make_msg_id(cmd);
+        msg.id  = (axis_id_ << kNumCmdIdBits) | cmd;
         msg.dlc = 8;
 
         switch (cmd) {
@@ -754,18 +754,6 @@ struct ODriveCAN {
         return msg;
     }
 
-    static const uint8_t kNumNodeIdBits = 6U;
-    static const uint8_t kNumCmdIdBits  = 5U;
-
-    uint8_t get_axis_id() const {
-        return axis_id_;
-    };
-
-    uint32_t make_msg_id(const CmdList msg) const {
-        return (axis_id_ << kNumCmdIdBits) | (uint32_t)(msg);
-    }
-
-   private:
     // Utility functions
     static uint8_t get_node_id(uint32_t msg_id) {
         return (msg_id >> kNumCmdIdBits);  // Upper 6 or more bits
@@ -776,5 +764,8 @@ struct ODriveCAN {
     }
 
    private:
-    uint8_t axis_id_ = 0;
+    static const uint8_t kNumNodeIdBits = 6U;
+    static const uint8_t kNumCmdIdBits  = 5U;
+
+    const uint8_t axis_id_ = 0;
 };
