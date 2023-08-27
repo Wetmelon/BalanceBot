@@ -20,8 +20,8 @@ Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
 
 odrv::ImuWrapper imu;
 
-ODriveCAN left_motor{0};   // Node ID 0
-ODriveCAN right_motor{1};  // Node ID 1
+ODriveArduinoCAN left_motor{0};   // Node ID 0
+ODriveArduinoCAN right_motor{1};  // Node ID 1
 
 CANSAME5x CAN;
 
@@ -258,7 +258,7 @@ void can_onReceive(int packetSize) {
     rxmsg.id = CAN.packetId();
     CAN.readBytes(rxmsg.data, 8);
 
-    switch (ODriveCAN::get_node_id(rxmsg.id)) {
+    switch (ODriveArduinoCAN::get_node_id(rxmsg.id)) {
         case 0: left_motor.decode(rxmsg); break;
         case 1: right_motor.decode(rxmsg); break;
         default: break;
@@ -267,7 +267,7 @@ void can_onReceive(int packetSize) {
 
 void sendCanMsg(const can_Message_t& msg) {
     CAN.beginPacket(msg.id);
-    CAN.write(msg.data, msg.dlc);
+    CAN.write(msg.data, msg.len);
     CAN.endPacket();
 }
 
@@ -275,19 +275,19 @@ void setAxisStates(ODriveAxisState state) {
     left_motor.set_axis_state_msg.Axis_Requested_State  = state;
     right_motor.set_axis_state_msg.Axis_Requested_State = state;
 
-    sendCanMsg(left_motor.encode(ODriveCAN::kSetAxisStateMsg));
-    sendCanMsg(right_motor.encode(ODriveCAN::kSetAxisStateMsg));
+    sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
+    sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
 }
 
 void sendCyclic() {
-    sendCanMsg(left_motor.encode(ODriveCAN::kSetControllerModeMsg));
-    sendCanMsg(right_motor.encode(ODriveCAN::kSetControllerModeMsg));
+    sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
+    sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
 
-    sendCanMsg(left_motor.encode(ODriveCAN::kSetLimitsMsg));
-    sendCanMsg(right_motor.encode(ODriveCAN::kSetLimitsMsg));
+    sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
+    sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
 
-    sendCanMsg(left_motor.encode(ODriveCAN::kSetInputTorqueMsg));
-    sendCanMsg(right_motor.encode(ODriveCAN::kSetInputTorqueMsg));
+    sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));
+    sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));
 }
 
 CmdPair filterCmds(const CmdPair& rx) {
