@@ -50,8 +50,8 @@ struct Get_Version_msg_t final {
         Fw_Version_Unreleased = can_getSignal<uint8_t>(msg.data, 56, 8, true);
     }
 
-    const uint8_t cmd_id     = 0x000;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x000;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Heartbeat_msg_t final {
@@ -83,8 +83,8 @@ struct Heartbeat_msg_t final {
         Trajectory_Done_Flag = can_getSignal<uint8_t>(msg.data, 48, 1, true);
     }
 
-    const uint8_t cmd_id     = 0x001;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x001;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Estop_msg_t final {
@@ -99,8 +99,8 @@ struct Estop_msg_t final {
     void decode(const can_Message_t& msg) {
     }
 
-    const uint8_t cmd_id     = 0x002;
-    const uint8_t msg_length = 0;
+    static constexpr uint8_t cmd_id     = 0x002;
+    static constexpr uint8_t msg_length = 0;
 };
 
 struct Get_Error_msg_t final {
@@ -124,8 +124,8 @@ struct Get_Error_msg_t final {
         Disarm_Reason = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
 
-    const uint8_t cmd_id     = 0x003;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x003;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Axis_Node_ID_msg_t final {
@@ -145,8 +145,8 @@ struct Set_Axis_Node_ID_msg_t final {
         Axis_Node_ID = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    const uint8_t cmd_id     = 0x006;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x006;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Axis_State_msg_t final {
@@ -166,8 +166,8 @@ struct Set_Axis_State_msg_t final {
         Axis_Requested_State = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    const uint8_t cmd_id     = 0x007;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x007;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Get_Encoder_Estimates_msg_t final {
@@ -191,8 +191,8 @@ struct Get_Encoder_Estimates_msg_t final {
         Vel_Estimate = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x009;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x009;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Controller_Mode_msg_t final {
@@ -216,8 +216,8 @@ struct Set_Controller_Mode_msg_t final {
         Input_Mode   = can_getSignal<uint32_t>(msg.data, 32, 32, true);
     }
 
-    const uint8_t cmd_id     = 0x00B;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x00B;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Input_Pos_msg_t final {
@@ -245,8 +245,8 @@ struct Set_Input_Pos_msg_t final {
         Torque_FF = can_getSignal<int16_t>(msg.data, 48, 16, true, 0.001f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x00C;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x00C;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Input_Vel_msg_t final {
@@ -270,8 +270,8 @@ struct Set_Input_Vel_msg_t final {
         Input_Torque_FF = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x00D;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x00D;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Input_Torque_msg_t final {
@@ -291,8 +291,8 @@ struct Set_Input_Torque_msg_t final {
         Input_Torque = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x00E;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x00E;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Limits_msg_t final {
@@ -316,8 +316,8 @@ struct Set_Limits_msg_t final {
         Current_Limit  = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x00F;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x00F;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Traj_Vel_Limit_msg_t final {
@@ -337,8 +337,8 @@ struct Set_Traj_Vel_Limit_msg_t final {
         Traj_Vel_Limit = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x011;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x011;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Traj_Accel_Limits_msg_t final {
@@ -362,8 +362,8 @@ struct Set_Traj_Accel_Limits_msg_t final {
         Traj_Decel_Limit = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x012;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x012;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Traj_Inertia_msg_t final {
@@ -383,8 +383,8 @@ struct Set_Traj_Inertia_msg_t final {
         Traj_Inertia = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x013;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x013;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Get_Iq_msg_t final {
@@ -408,8 +408,8 @@ struct Get_Iq_msg_t final {
         Iq_Measured = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x014;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x014;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Get_Temperature_msg_t final {
@@ -433,8 +433,8 @@ struct Get_Temperature_msg_t final {
         Motor_Temperature = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x015;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x015;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Reboot_msg_t final {
@@ -449,8 +449,8 @@ struct Reboot_msg_t final {
     void decode(const can_Message_t& msg) {
     }
 
-    const uint8_t cmd_id     = 0x016;
-    const uint8_t msg_length = 0;
+    static constexpr uint8_t cmd_id     = 0x016;
+    static constexpr uint8_t msg_length = 0;
 };
 
 struct Get_Bus_Voltage_Current_msg_t final {
@@ -474,8 +474,8 @@ struct Get_Bus_Voltage_Current_msg_t final {
         Bus_Current = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x017;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x017;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Clear_Errors_msg_t final {
@@ -490,8 +490,8 @@ struct Clear_Errors_msg_t final {
     void decode(const can_Message_t& msg) {
     }
 
-    const uint8_t cmd_id     = 0x018;
-    const uint8_t msg_length = 0;
+    static constexpr uint8_t cmd_id     = 0x018;
+    static constexpr uint8_t msg_length = 0;
 };
 
 struct Set_Absolute_Position_msg_t final {
@@ -511,8 +511,8 @@ struct Set_Absolute_Position_msg_t final {
         Position = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x019;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x019;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Pos_Gain_msg_t final {
@@ -532,8 +532,8 @@ struct Set_Pos_Gain_msg_t final {
         Pos_Gain = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x01A;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x01A;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Set_Vel_Gains_msg_t final {
@@ -557,8 +557,8 @@ struct Set_Vel_Gains_msg_t final {
         Vel_Integrator_Gain = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x01B;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x01B;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Get_Torques_msg_t final {
@@ -582,8 +582,8 @@ struct Get_Torques_msg_t final {
         Torque_Estimate = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
     }
 
-    const uint8_t cmd_id     = 0x01C;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x01C;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Get_Controller_Error_msg_t final {
@@ -603,8 +603,8 @@ struct Get_Controller_Error_msg_t final {
         Controller_Error = can_getSignal<uint32_t>(msg.data, 0, 32, true);
     }
 
-    const uint8_t cmd_id     = 0x01D;
-    const uint8_t msg_length = 8;
+    static constexpr uint8_t cmd_id     = 0x01D;
+    static constexpr uint8_t msg_length = 8;
 };
 
 struct Enter_DFU_Mode_msg_t final {
@@ -619,8 +619,8 @@ struct Enter_DFU_Mode_msg_t final {
     void decode(const can_Message_t& msg) {
     }
 
-    const uint8_t cmd_id     = 0x01F;
-    const uint8_t msg_length = 0;
+    static constexpr uint8_t cmd_id     = 0x01F;
+    static constexpr uint8_t msg_length = 0;
 };
 
 struct ODriveArduinoCAN {
