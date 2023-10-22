@@ -9,6 +9,7 @@
 #include <array>
 
 #include "ODriveEnums.h"
+#include "balancer.hpp"
 #include "can_simple/can_helpers.hpp"
 #include "can_simple/can_simple_messages.hpp"
 #include "utils.hpp"
@@ -25,9 +26,7 @@ ODriveArduinoCAN right_motor{1};  // Node ID 1
 
 CANSAME5x CAN;
 
-odrv::PIControllerClass vel_controller;
-odrv::PIControllerClass pitch_controller;
-odrv::PIControllerClass pitch_rate_controller;
+odrv::BalanceControl balancer;
 
 // Constants
 const float kControlLoopPeriod = 0.01f;  // [sec]
@@ -94,6 +93,29 @@ void setup() {
 
     right_motor.set_limits_msg.Velocity_Limit = 1000.0f;
     right_motor.set_limits_msg.Current_Limit  = 40.0f;
+
+    // Balancing controller settings
+    balancer.settings.vel_controller.Kp         = 10.0f;
+    balancer.settings.vel_controller.Ki         = 1.0f;
+    balancer.settings.vel_controller.iterm_min  = -10.0f;  // [deg]
+    balancer.settings.vel_controller.output_min = -10.0f;  // [deg]
+    balancer.settings.vel_controller.iterm_max  = 10.0f;   // [deg]
+    balancer.settings.vel_controller.output_max = 10.0f;   // [deg]
+
+    balancer.settings.pitch_controller.Kp         = 10.0f;
+    balancer.settings.pitch_controller.Ki         = 10.0f;
+    balancer.settings.pitch_controller.iterm_min  = -100.0f;  // [deg/s]
+    balancer.settings.pitch_controller.iterm_max  = 100.0f;   // [deg/s]
+    balancer.settings.pitch_controller.output_min = -100.0f;  // [deg/s]
+    balancer.settings.pitch_controller.output_max = 100.0f;   // [deg/s]
+
+    balancer.settings.pitch_rate_controller.Kp         = 0.1f;
+    balancer.settings.pitch_rate_controller.Ki         = 0.0f;
+    balancer.settings.pitch_rate_controller.output_min = -10.0f;  // [Nm]
+    balancer.settings.pitch_rate_controller.output_max = 10.0f;   // [Nm]
+
+    balancer.settings.J  = 1.0f;
+    balancer.settings.Ts = 0.01f;  // 10ms control loop;
 }
 
 void loop() {
@@ -206,47 +228,16 @@ float driveControl(const float vel_target, bool enable) {
     // const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);  // [rad/s] Vehicle yaw Rate, per motor sensors
     // const float gyro_yaw   = imu.yaw;                                        // [rad/s] Vehicle yaw rate, per gyro
 
-    // Run P/PI/P control loop
-    vel_controller.settings.Kp = 10.0f;
-    vel_controller.settings.Ki = 1.0f;
+    balancer.inputs.enable     = enable;
+    balancer.inputs.vel_target = vel_target;
 
-    vel_controller.settings.iterm_min  = -10.0f;  // [deg]
-    vel_controller.settings.output_min = -10.0f;  // [deg]
+    balancer.inputs.pitch      = imu.pitch;
+    balancer.inputs.pitch_rate = imu.pitch_rate;
+    balancer.inputs.vel        = (vel_right + vel_left) / 2.0f;
 
-    vel_controller.settings.iterm_max  = 10.0f;  // [deg]
-    vel_controller.settings.output_max = 10.0f;  // [deg]
+    balancer.update();
 
-    const float pitch_cmd = vel_controller.update(enable, 0.0f, vel_actual, kControlLoopPeriod);
-
-    pitch_controller.settings.Kp = 10.0f;
-    pitch_controller.settings.Ki = 10.0f;
-
-    pitch_controller.settings.iterm_min  = -100.0f;  // [deg/s]
-    pitch_controller.settings.iterm_max  = 100.0f;   // [deg/s]
-    pitch_controller.settings.output_min = -100.0f;  // [deg/s]
-    pitch_controller.settings.output_max = 100.0f;   // [deg/s]
-
-    const float pitch_rate_cmd = pitch_controller.update(enable, pitch_cmd, imu.pitch, kControlLoopPeriod);
-
-    // Pitch rate controller outputs an acceleration, and Tau = J * alpha
-    pitch_rate_controller.settings.Kp = 0.1f;
-    pitch_rate_controller.settings.Ki = 0.0f;
-
-    pitch_rate_controller.settings.output_min = -10.0f;  // [Nm]
-    pitch_rate_controller.settings.output_max = 10.0f;   // [Nm]
-
-    const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, imu.pitch_rate, kControlLoopPeriod) * kJ;
-
-#ifdef DEBUG
-
-    // Serial.printf("V: % 06.2f Pcmd: % 06.2f P: % 06.2f Rcmd: % 06.2f R: % 06.2f T: % 06.2f\n",
-    //               vel_actual, pitch_cmd, imu.pitch, pitch_rate_cmd, imu.pitch_rate, torque_cmd);
-    Serial.printf("% 06.2f,% 06.2f,% 06.2f,% 06.2f,% 06.2f,% 06.2f\n",
-                  vel_actual, pitch_cmd, imu.pitch, pitch_rate_cmd, imu.pitch_rate, torque_cmd);
-
-#endif
-
-    return torque_cmd;
+    return balancer.getOutputs().torque_cmd;
 }
 
 float steerControl(const float yaw_target) {
