@@ -86,7 +86,7 @@ struct ImuWrapper {
 
         Serial.println("Wire started");
 
-        _imu.enableDebugging(Serial);
+        // _imu.enableDebugging(Serial);
 
         digitalWrite(11, HIGH);
 
@@ -99,10 +99,8 @@ struct ImuWrapper {
 
         Wire.setClock(400000);
 
-        // _imu.enableReport(SH2_GAME_ROTATION_VECTOR);
-        // _imu.enableReport(SH2_GYROSCOPE_CALIBRATED);
         _imu.enableGameRotationVector(10);  // Gyro and Accel only
-        _imu.enableUncalibratedGyro(10);
+        _imu.enableUncalibratedGyro(10);    // Gyro without the zero-clamping
 
         Serial.println("Wire clock set");
     }
@@ -112,10 +110,6 @@ struct ImuWrapper {
         if (_imu.dataAvailable()) {
             timer.reset();
             _data_valid = true;
-            // qw = imu.getQuatReal();
-            // qi = imu.getQuatI();
-            // qj = imu.getQuatJ();
-            // qk = imu.getQuatK();
 
             // Sensor is oriented in such a way that imu roll is vehicle pitch
             pitch = _imu.getRoll() * (180.0f / kPi) - 90.0f;

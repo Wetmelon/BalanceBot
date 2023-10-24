@@ -16,24 +16,30 @@
 
 #define DEBUG
 
-// Objects
+// On-board NeoPixel object
 Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
 
+// Feather M4 CAN interface
+CANSAME5x CAN;
+
+// Convenience wrapper for the IMU
 odrv::ImuWrapper imu;
 
+// Controllers used for balancing and steering
+odrv::BalanceControl balance_control;
+odrv::PIDController  steer_control;
+
+// CAN communication objects for the ODrives
 ODriveArduinoCAN left_motor{0};   // Node ID 0
 ODriveArduinoCAN right_motor{1};  // Node ID 1
 
-CANSAME5x CAN;
-
-odrv::BalanceControl balancer;
-
 // Constants
-const float kControlLoopPeriod = 0.01f;  // [sec]
+constexpr float kControlLoopPeriod = 0.01f;  // [sec]
 
-const float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
-const float kTrackWidth    = 1.0f;     // [m] Distance between wheels
-const float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
+// Vehicle parameters
+constexpr float kWheelDiameter = 0.1524f;  // [m] Wheel Diameter
+constexpr float kTrackWidth    = 1.0f;     // [m] Distance between wheels
+constexpr float kJ             = 1.0f;     // [Nm/(rad/s^2)] Rotational inertia
 
 struct CmdPair {
     float drive;
@@ -46,10 +52,11 @@ enum class State {
     Error
 };
 
-const std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
+// Name lookup for State
+constexpr std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
 
 void setup() {
-    // Wait for BNO 085 to boot
+    // Wait for BNO085 to boot
     delay(100);
 
     pinMode(LED_BUILTIN, OUTPUT);
@@ -63,10 +70,6 @@ void setup() {
     digitalWrite(11, LOW);
 
     Serial.begin(115200);
-    // while (!Serial) {
-    //     delay(1);
-    // }
-
     Serial.println("Connected to serial at 115200 baud.");
 
     // Start CAN at 500kbps
@@ -75,6 +78,7 @@ void setup() {
 
     Serial.println("Connected to CAN at 500kbps");
 
+    // Start the IMU on i2c
     imu.begin();
 
     Serial.println("Connected to IMU at 400kHz");
@@ -95,33 +99,42 @@ void setup() {
     right_motor.set_limits_msg.Current_Limit  = 40.0f;
 
     // Balancing controller settings
-    balancer.settings.vel_controller.Kp         = 10.0f;
-    balancer.settings.vel_controller.Ki         = 1.0f;
-    balancer.settings.vel_controller.iterm_min  = -10.0f;  // [deg]
-    balancer.settings.vel_controller.output_min = -10.0f;  // [deg]
-    balancer.settings.vel_controller.iterm_max  = 10.0f;   // [deg]
-    balancer.settings.vel_controller.output_max = 10.0f;   // [deg]
+    balance_control.settings.vel_controller.Kp         = 10.0f;
+    balance_control.settings.vel_controller.Ki         = 1.0f;
+    balance_control.settings.vel_controller.iterm_min  = -10.0f;  // [deg]
+    balance_control.settings.vel_controller.output_min = -10.0f;  // [deg]
+    balance_control.settings.vel_controller.iterm_max  = 10.0f;   // [deg]
+    balance_control.settings.vel_controller.output_max = 10.0f;   // [deg]
 
-    balancer.settings.pitch_controller.Kp         = 10.0f;
-    balancer.settings.pitch_controller.Ki         = 10.0f;
-    balancer.settings.pitch_controller.iterm_min  = -100.0f;  // [deg/s]
-    balancer.settings.pitch_controller.iterm_max  = 100.0f;   // [deg/s]
-    balancer.settings.pitch_controller.output_min = -100.0f;  // [deg/s]
-    balancer.settings.pitch_controller.output_max = 100.0f;   // [deg/s]
+    balance_control.settings.pitch_controller.Kp         = 10.0f;
+    balance_control.settings.pitch_controller.Ki         = 10.0f;
+    balance_control.settings.pitch_controller.iterm_min  = -100.0f;  // [deg/s]
+    balance_control.settings.pitch_controller.iterm_max  = 100.0f;   // [deg/s]
+    balance_control.settings.pitch_controller.output_min = -100.0f;  // [deg/s]
+    balance_control.settings.pitch_controller.output_max = 100.0f;   // [deg/s]
 
-    balancer.settings.pitch_rate_controller.Kp         = 0.1f;
-    balancer.settings.pitch_rate_controller.Ki         = 0.0f;
-    balancer.settings.pitch_rate_controller.output_min = -10.0f;  // [Nm]
-    balancer.settings.pitch_rate_controller.output_max = 10.0f;   // [Nm]
+    balance_control.settings.pitch_rate_controller.Kp         = 0.1f;
+    balance_control.settings.pitch_rate_controller.Ki         = 0.0f;
+    balance_control.settings.pitch_rate_controller.output_min = -10.0f;  // [Nm]
+    balance_control.settings.pitch_rate_controller.output_max = 10.0f;   // [Nm]
 
-    balancer.settings.J  = 1.0f;
-    balancer.settings.Ts = 0.01f;  // 10ms control loop;
+    balance_control.settings.J  = 1.0f;
+    balance_control.settings.Ts = kControlLoopPeriod;  // 10ms control loop;
+
+    // // Yaw control settings
+    // steer_control.settings.Kp         = 10.0f;
+    // steer_control.settings.Ki         = 10.0f;
+    // steer_control.settings.iterm_min  = -100.0f;  // [Nm]
+    // steer_control.settings.iterm_max  = 100.0f;   // [Nm]
+    // steer_control.settings.output_min = -100.0f;  // [Nm]
+    // steer_control.settings.output_max = 100.0f;   // [Nm]
 }
 
 void loop() {
-    uint32_t start = micros();
+    static odrv::Timer control_timer(10);
+    static State       state = State::Idle;
 
-    static State state = State::Idle;
+    uint32_t start = micros();
 
     // Blink the LED at 1Hz
     odrv::blink(1000);
@@ -129,30 +142,47 @@ void loop() {
     // Read IMU
     imu.read();
 
-    // We run the control loop when there's data available from the IMU (100Hz)
-    static odrv::Timer loop_timer(10);  // 10ms control loop
-    if (loop_timer.isExpired()) {
-        loop_timer.reset();
+    // Runs the control loop at 100Hz
+    if (control_timer.isExpired()) {
+        control_timer.reset();
 
-        // State Machine
+        // Run State Machine
         state = run_state_machine(state);
 
-        // TODO:  Reset rx_lpf on disable
-        CmdPair rx     = getControllerCmds();
-        CmdPair rx_lpf = filterCmds(rx);
+        // Only run our controllers if we're in the active state
+        const bool enable = (state == State::Active);
 
-        float drive_torque = driveControl(rx_lpf.drive, state == State::Active);
-        float steer_torque = steerControl(rx_lpf.steer);
+        // Get forward and left/right commands from joystick
+        CmdPair rx = getControllerCmds(enable);
 
+        // Yaw-priority ISO pattern mixer (maintains 100% wheel speed differential at 100% joystick steer position)
+        const float steer_cmd = rx.steer * 0.5f;
+        const float drive_cmd = rx.drive * (1.0f - abs(steer_cmd));
+
+        // Motor speeds
+        const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);         // [m/s] right wheel speed
+        const float vel_left  = -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] left wheel speed
+
+        // TODO:  Verify yaw rate calculation matches gyro reading
+        const float vel_actual = (vel_right + vel_left) / 2.0f;                  // [m/s] Vehicle speed
+        const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);  // [rad/s] Vehicle yaw rate, per motor sensors
+
+        // Run balancing and steering controllers
+        const float drive_torque = balance_control.update(enable, drive_cmd, imu.pitch, imu.pitch_rate, vel_actual);
+        const float steer_torque = steer_control.update(enable, steer_cmd, yaw_rate, kControlLoopPeriod);
+
+        // Convert from drive/steer to left/right motor torques
         right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
         left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
 
+        // Set commands to 0 if we're not in the active state
         if (state != State::Active) {
             right_motor.set_input_torque_msg.Input_Torque = 0.0f;
             left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        sendCyclic();
+        // Send the 100hz CAN messages
+        sendCAN();
 
         uint32_t end = micros();
 
@@ -216,34 +246,6 @@ State run_state_machine(State state) {
     return next_state;
 }
 
-float driveControl(const float vel_target, bool enable) {
-    // Pitch angle and rate from IMU
-
-    // Motor speeds
-    const float vel_right = right_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);         // [m/s] right wheel speed
-    const float vel_left  = -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate * (kWheelDiameter * kPi);  // [m/s] left wheel speed
-
-    // TODO:  Verify yaw rate calculation matches gyro reading
-    const float vel_actual = (vel_right + vel_left) / 2.0f;  //  - imu.pitch_rate;  // [m/s] Vehicle speed
-    // const float yaw_rate   = (vel_right - vel_left) / (2.0f * kTrackWidth);  // [rad/s] Vehicle yaw Rate, per motor sensors
-    // const float gyro_yaw   = imu.yaw;                                        // [rad/s] Vehicle yaw rate, per gyro
-
-    balancer.inputs.enable     = enable;
-    balancer.inputs.vel_target = vel_target;
-
-    balancer.inputs.pitch      = imu.pitch;
-    balancer.inputs.pitch_rate = imu.pitch_rate;
-    balancer.inputs.vel        = (vel_right + vel_left) / 2.0f;
-
-    balancer.update();
-
-    return balancer.getOutputs().torque_cmd;
-}
-
-float steerControl(const float yaw_target) {
-    return 0.0f;
-}
-
 void can_onReceive(int packetSize) {
     can_Message_t rxmsg;
     rxmsg.id = CAN.packetId();
@@ -270,7 +272,7 @@ void setAxisStates(ODriveAxisState state) {
     sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
 }
 
-void sendCyclic() {
+void sendCAN() {
     sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
     sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
 
@@ -283,7 +285,7 @@ void sendCyclic() {
 
 CmdPair filterCmds(const CmdPair& rx) {
     // Lowpass filters
-    static odrv::lpf drive_lpf{kControlLoopPeriod, 0.5f};
+    static odrv::lpf drive_lpf{kControlLoopPeriod, 1.0f};
     static odrv::lpf steer_lpf{kControlLoopPeriod, 1.0f};
 
     return {
@@ -292,7 +294,8 @@ CmdPair filterCmds(const CmdPair& rx) {
     };
 }
 
-CmdPair getControllerCmds() {
-    // Read RC controller
-    return {};
+CmdPair getControllerCmds(bool enable) {
+    // TODO:  Read controller
+    CmdPair rx{};
+    return filterCmds(rx);
 }

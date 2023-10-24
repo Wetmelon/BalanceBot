@@ -5,18 +5,6 @@
 namespace odrv {
 
 struct BalanceControl {
-    struct Inputs_t {
-        float vel_target = 0.0f;
-        float vel        = 0.0f;
-        float pitch      = 0.0f;
-        float pitch_rate = 0.0f;
-        bool  enable     = false;
-    };
-
-    struct Outputs_t {
-        float torque_cmd = 0.0f;
-    };
-
     struct Settings_t {
         PIDController::Settings_t& vel_controller;
         PIDController::Settings_t& pitch_controller;
@@ -26,23 +14,18 @@ struct BalanceControl {
         float Ts;
     };
 
-    void update() {
-        // Vel controller outputs a pitch command
-        // Pitch controller outputs a pitch rate
+    float update(float vel_target, float vel, float pitch, float pitch_rate, bool enable) {
+        // Velocity controller outputs a pitch command
+        const float pitch_cmd = vel_controller.update(enable, vel_target, vel, settings.Ts);
+
+        // Pitch controller outputs a pitch rate command
+        const float pitch_rate_cmd = pitch_controller.update(enable, pitch_cmd, pitch, settings.Ts);
+
         // Pitch rate controller outputs an acceleration, and Tau = J * alpha
+        const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate, settings.Ts) * settings.J;
 
-        const float pitch_cmd      = vel_controller.update(inputs.enable, inputs.vel_target, inputs.vel, settings.Ts);
-        const float pitch_rate_cmd = pitch_controller.update(inputs.enable, pitch_cmd, inputs.pitch, settings.Ts);
-        const float torque_cmd     = pitch_rate_controller.update(inputs.enable, pitch_rate_cmd, inputs.pitch_rate, settings.Ts) * settings.J;
-
-        outputs.torque_cmd = -1.0f * torque_cmd;
+        return torque_cmd;
     }
-
-    const Outputs_t& getOutputs() {
-        return outputs;
-    }
-
-    Inputs_t inputs{};
 
     Settings_t settings = {
         .vel_controller        = vel_controller.settings,
@@ -54,8 +37,6 @@ struct BalanceControl {
     };
 
    private:
-    Outputs_t outputs{};
-
     PIDController vel_controller{};
     PIDController pitch_controller{};
     PIDController pitch_rate_controller{};
