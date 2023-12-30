@@ -3,5 +3,5 @@
         "*.config": "makefile",
         "cmath": "cpp",
         "algorithm": "cpp"
-    }
+    },
 }

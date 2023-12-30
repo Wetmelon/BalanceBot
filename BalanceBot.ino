@@ -1,10 +1,8 @@
 
-// Uno R4
-// #include <Arduino_CAN.h>
-
 // Adafruit Feather M4 CAN
-#include <Adafruit_NeoPixel.h>
-#include <CANSAME5x.h>
+#include <CAN.h>
+#include <WiFiNINA.h>
+#include <utility/wifi_drv.h>
 
 #include <array>
 
@@ -16,11 +14,30 @@
 
 #define DEBUG
 
-// On-board NeoPixel object
-Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
+struct MKRrgb {
+    void setup() {
+        WiFiDrv::pinMode(GREEN, OUTPUT);
+        WiFiDrv::pinMode(RED, OUTPUT);
+        WiFiDrv::pinMode(BLUE, OUTPUT);
+    }
 
-// Feather M4 CAN interface
-CANSAME5x CAN;
+    void setColor(uint8_t r, uint8_t g, uint8_t b) {
+        WiFiDrv::analogWrite(GREEN, r);  // GREEN
+        WiFiDrv::analogWrite(RED, g);    // RED
+        WiFiDrv::analogWrite(BLUE, b);   // BLUE
+    }
+
+   private:
+    enum {
+        GREEN = 25,
+        RED   = 26,
+        BLUE  = 27,
+    };
+};
+
+// On-board NeoPixel object
+// Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
+MKRrgb pixel;
 
 // Convenience wrapper for the IMU
 odrv::ImuWrapper imu;
@@ -56,30 +73,26 @@ enum class State {
 constexpr std::array<const char*, 3> StateStrs = {"Idle", "Active", "Error"};
 
 void setup() {
-    // Wait for BNO085 to boot
-    delay(100);
-
     pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(PIN_CAN_STANDBY, OUTPUT);
-    pinMode(PIN_CAN_BOOSTEN, OUTPUT);
-    pinMode(11, OUTPUT);
 
-    // Enable CAN transceiver
-    digitalWrite(PIN_CAN_STANDBY, false);  // turn off STANDBY
-    digitalWrite(PIN_CAN_BOOSTEN, true);   // turn on booster
-    digitalWrite(11, LOW);
+    // Initialize MKR RGB LED
+    // pixel.setup();
 
     Serial.begin(115200);
+    delay(100);
+
     Serial.println("Connected to serial at 115200 baud.");
 
     // Start CAN at 500kbps
-    CAN.begin(500000);
-    CAN.onReceive(can_onReceive);
-
-    Serial.println("Connected to CAN at 500kbps");
+    if (!CAN.begin(500000)) {
+        Serial.println("CAN Begin Failed!");
+    } else {
+        Serial.println("Connected to CAN at 500kbps");
+    }
+    // CAN.onReceive(can_onReceive);
 
     // Start the IMU on i2c
-    imu.begin();
+    // imu.begin();
 
     Serial.println("Connected to IMU at 400kHz");
     Serial.println("Vel,Pcmd,Pitch,RateCmd,Rate,TorqueCmd");
@@ -140,7 +153,7 @@ void loop() {
     odrv::blink(1000);
 
     // Read IMU
-    imu.read();
+    // imu.read();
 
     // Runs the control loop at 100Hz
     if (control_timer.isExpired()) {
@@ -194,7 +207,7 @@ void loop() {
         // Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("Quat: w: % 06.2f, i: % 06.2f, j: % 06.2f, k: % 06.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
-        Serial.printf("Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
+        // Serial.printf("Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
         // Serial.printf("Rates  R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll_rate, imu.pitch_rate, imu.yaw_rate);
         // Serial.printf("Speeds L: % 06.2f R: % 06.2f\n", -1.0f * left_motor.get_encoder_estimates_msg.Vel_Estimate, right_motor.get_encoder_estimates_msg.Vel_Estimate);
         // Serial.printf("%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
@@ -247,6 +260,8 @@ State run_state_machine(State state) {
 }
 
 void can_onReceive(int packetSize) {
+    (void)packetSize;
+
     can_Message_t rxmsg;
     rxmsg.id = CAN.packetId();
     CAN.readBytes(rxmsg.data, 8);
@@ -259,9 +274,29 @@ void can_onReceive(int packetSize) {
 }
 
 void sendCanMsg(const can_Message_t& msg) {
-    CAN.beginPacket(msg.id);
-    CAN.write(msg.data, msg.len);
-    CAN.endPacket();
+    size_t begin = CAN.beginPacket(msg.id, msg.len);
+    size_t len = CAN.write(msg.data, msg.len);
+    size_t end = CAN.endPacket();
+
+    Serial.print(begin);
+    Serial.print(' ');
+    Serial.print(len);
+    Serial.print(' ');
+    Serial.print(end, HEX);
+
+    // Serial.print("Tx: ");
+    // Serial.print(len);
+    // Serial.print(' ');
+    // Serial.print((msg.id & 0xF0) >> 4, HEX);
+    // Serial.print((msg.id & 0x0F), HEX);
+    // Serial.print('\t');
+    // for(size_t i = 0; i < msg.len; i++){
+    //     Serial.print((msg.data[i] & 0xF0) >> 4, HEX);
+    //     Serial.print((msg.data[i] & 0x0F), HEX);
+    //     Serial.print(' ');
+    // }
+
+    Serial.println();
 }
 
 void setAxisStates(ODriveAxisState state) {
