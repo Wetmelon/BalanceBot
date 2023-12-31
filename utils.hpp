@@ -1,6 +1,8 @@
 #pragma once
 
+#include <WiFiNINA.h>
 #include <Wire.h>
+#include <utility/wifi_drv.h>
 
 #include <algorithm>
 
@@ -9,6 +11,30 @@
 constexpr float kPi = PI;
 
 namespace odrv {
+struct MKRrgb {
+    void setup() {
+        WiFiDrv::pinMode(GREEN, OUTPUT);
+        WiFiDrv::pinMode(RED, OUTPUT);
+        WiFiDrv::pinMode(BLUE, OUTPUT);
+        setColor(0, 0, 0);
+    }
+
+    void setColor(uint8_t r, uint8_t g, uint8_t b) {
+        WiFiDrv::analogWrite(GREEN, r);  // GREEN
+        WiFiDrv::analogWrite(RED, g);    // RED
+        WiFiDrv::analogWrite(BLUE, b);   // BLUE
+    }
+
+   private:
+    enum {
+        GREEN = 25,
+        RED   = 26,
+        BLUE  = 27,
+    };
+};
+
+// On-board NeoPixel object
+MKRrgb pixel;
 
 void blink(const uint32_t blink_period_ms) {
     static uint32_t last_blink = millis();
@@ -90,12 +116,15 @@ struct ImuWrapper {
 
         if (!_imu.begin(0x4A)) {
             Serial.println("i2c startup failed!");
+            pixel.setColor(127, 0, 0);
+
             while (true) {
                 blink(2000);
                 delay(1);
             }
         } else {
             Serial.println("IMU started");
+            pixel.setColor(0, 127, 0);
         }
 
         Wire.setClock(400000);

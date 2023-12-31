@@ -49,7 +49,7 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
 
     // Initialize MKR RGB LED
-    // pixel.setup();
+    odrv::pixel.setup();
 
     Serial.begin(115200);
     int count = 0;
