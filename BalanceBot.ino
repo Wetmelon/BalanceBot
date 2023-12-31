@@ -1,8 +1,6 @@
 
 // Adafruit Feather M4 CAN
 #include <CAN.h>
-#include <WiFiNINA.h>
-#include <utility/wifi_drv.h>
 
 #include <array>
 
@@ -12,32 +10,7 @@
 #include "can_simple/can_simple_messages.hpp"
 #include "utils.hpp"
 
-#define DEBUG
-
-struct MKRrgb {
-    void setup() {
-        WiFiDrv::pinMode(GREEN, OUTPUT);
-        WiFiDrv::pinMode(RED, OUTPUT);
-        WiFiDrv::pinMode(BLUE, OUTPUT);
-    }
-
-    void setColor(uint8_t r, uint8_t g, uint8_t b) {
-        WiFiDrv::analogWrite(GREEN, r);  // GREEN
-        WiFiDrv::analogWrite(RED, g);    // RED
-        WiFiDrv::analogWrite(BLUE, b);   // BLUE
-    }
-
-   private:
-    enum {
-        GREEN = 25,
-        RED   = 26,
-        BLUE  = 27,
-    };
-};
-
-// On-board NeoPixel object
-// Adafruit_NeoPixel pixel{1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ400};
-MKRrgb pixel;
+// #define DEBUG
 
 // Convenience wrapper for the IMU
 odrv::ImuWrapper imu;
@@ -79,7 +52,11 @@ void setup() {
     // pixel.setup();
 
     Serial.begin(115200);
-    delay(100);
+    int count = 0;
+
+    while (!Serial && (++count < 2000)) {
+        delay(1);
+    }
 
     Serial.println("Connected to serial at 115200 baud.");
 
@@ -89,13 +66,10 @@ void setup() {
     } else {
         Serial.println("Connected to CAN at 500kbps");
     }
-    // CAN.onReceive(can_onReceive);
+    CAN.onReceive(can_onReceive);
 
     // Start the IMU on i2c
-    // imu.begin();
-
-    Serial.println("Connected to IMU at 400kHz");
-    Serial.println("Vel,Pcmd,Pitch,RateCmd,Rate,TorqueCmd");
+    imu.begin();
 
     // Setup our desired control and input modes
     left_motor.set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
@@ -153,7 +127,7 @@ void loop() {
     odrv::blink(1000);
 
     // Read IMU
-    // imu.read();
+    imu.read();
 
     // Runs the control loop at 100Hz
     if (control_timer.isExpired()) {
@@ -203,7 +177,12 @@ void loop() {
         // if ((size_t)state < StateStrs.size()) {
         //     Serial.println(StateStrs[(size_t)state]);
         // }
+        char s[80];
+        sprintf(s, "Angles R: % 06.2f P: % 06.2f Y: % 06.2f\n", imu.roll, imu.pitch, imu.yaw);
+        Serial.print(s);
 
+        sprintf(s, "%dus %3.1f%%\n", end - start, (end - start) / 100.0f);
+        Serial.print(s);
         // Serial.printf("States L: %s\n", ODriveStateStrings[left_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("States R: %s\n", ODriveStateStrings[right_motor.heartbeat_msg.Axis_State]);
         // Serial.printf("Quat: w: % 06.2f, i: % 06.2f, j: % 06.2f, k: % 06.2f\n", imu.qw, imu.qi, imu.qj, imu.qk);
@@ -274,29 +253,9 @@ void can_onReceive(int packetSize) {
 }
 
 void sendCanMsg(const can_Message_t& msg) {
-    size_t begin = CAN.beginPacket(msg.id, msg.len);
-    size_t len = CAN.write(msg.data, msg.len);
-    size_t end = CAN.endPacket();
-
-    Serial.print(begin);
-    Serial.print(' ');
-    Serial.print(len);
-    Serial.print(' ');
-    Serial.print(end, HEX);
-
-    // Serial.print("Tx: ");
-    // Serial.print(len);
-    // Serial.print(' ');
-    // Serial.print((msg.id & 0xF0) >> 4, HEX);
-    // Serial.print((msg.id & 0x0F), HEX);
-    // Serial.print('\t');
-    // for(size_t i = 0; i < msg.len; i++){
-    //     Serial.print((msg.data[i] & 0xF0) >> 4, HEX);
-    //     Serial.print((msg.data[i] & 0x0F), HEX);
-    //     Serial.print(' ');
-    // }
-
-    Serial.println();
+    CAN.beginPacket(msg.id, msg.len);
+    CAN.write(msg.data, msg.len);
+    CAN.endPacket();
 }
 
 void setAxisStates(ODriveAxisState state) {

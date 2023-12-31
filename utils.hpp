@@ -88,21 +88,23 @@ struct ImuWrapper {
 
         // _imu.enableDebugging(Serial);
 
-        digitalWrite(11, HIGH);
-
-        while (!_imu.begin(0x4A)) {
-            blink(500);
-            delay(10);
-        };
-
-        Serial.println("IMU started");
+        if (!_imu.begin(0x4A)) {
+            Serial.println("i2c startup failed!");
+            while (true) {
+                blink(2000);
+                delay(1);
+            }
+        } else {
+            Serial.println("IMU started");
+        }
 
         Wire.setClock(400000);
+        Serial.println("Wire clock set");
 
         _imu.enableGameRotationVector(10);  // Gyro and Accel only
         _imu.enableUncalibratedGyro(10);    // Gyro without the zero-clamping
 
-        Serial.println("Wire clock set");
+        Serial.println("IMU Configured");
     }
 
     void read() {
