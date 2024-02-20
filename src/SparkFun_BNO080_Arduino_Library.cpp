@@ -1532,11 +1532,11 @@ void BNO080::saveCalibration()
 // Returns false if failed
 boolean BNO080::waitForI2C()
 {
-	for (uint8_t counter = 0; counter < 100; counter++) // Don't got more than 255
+	for (uint8_t counter = 0; counter < 100; counter++)
 	{
 		if (_i2cPort->available() > 0)
 			return (true);
-		delay(1);
+		delayMicroseconds(10); // Up to 1ms delay
 	}
 
 	if (_printDebug == true)

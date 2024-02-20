@@ -624,34 +624,34 @@ struct Enter_DFU_Mode_msg_t final {
 };
 
 struct ODriveArduinoCAN {
-    ODriveArduinoCAN(uint32_t axis_id) : axis_id_(axis_id) {}
+    // ODriveArduinoCAN(uint32_t axis_id) : axis_id_(axis_id) {}
 
-    Get_Version_msg_t             get_version_msg;
-    Heartbeat_msg_t               heartbeat_msg;
-    Estop_msg_t                   estop_msg;
-    Get_Error_msg_t               get_error_msg;
-    Set_Axis_Node_ID_msg_t        set_axis_node_id_msg;
-    Set_Axis_State_msg_t          set_axis_state_msg;
-    Get_Encoder_Estimates_msg_t   get_encoder_estimates_msg;
-    Set_Controller_Mode_msg_t     set_controller_mode_msg;
-    Set_Input_Pos_msg_t           set_input_pos_msg;
-    Set_Input_Vel_msg_t           set_input_vel_msg;
-    Set_Input_Torque_msg_t        set_input_torque_msg;
-    Set_Limits_msg_t              set_limits_msg;
-    Set_Traj_Vel_Limit_msg_t      set_traj_vel_limit_msg;
-    Set_Traj_Accel_Limits_msg_t   set_traj_accel_limits_msg;
-    Set_Traj_Inertia_msg_t        set_traj_inertia_msg;
-    Get_Iq_msg_t                  get_iq_msg;
-    Get_Temperature_msg_t         get_temperature_msg;
-    Reboot_msg_t                  reboot_msg;
-    Get_Bus_Voltage_Current_msg_t get_bus_voltage_current_msg;
-    Clear_Errors_msg_t            clear_errors_msg;
-    Set_Absolute_Position_msg_t   set_absolute_position_msg;
-    Set_Pos_Gain_msg_t            set_pos_gain_msg;
-    Set_Vel_Gains_msg_t           set_vel_gains_msg;
-    Get_Torques_msg_t             get_torques_msg;
-    Get_Controller_Error_msg_t    get_controller_error_msg;
-    Enter_DFU_Mode_msg_t          enter_dfu_mode_msg;
+    Get_Version_msg_t             get_version_msg{};
+    Heartbeat_msg_t               heartbeat_msg{};
+    Estop_msg_t                   estop_msg{};
+    Get_Error_msg_t               get_error_msg{};
+    Set_Axis_Node_ID_msg_t        set_axis_node_id_msg{};
+    Set_Axis_State_msg_t          set_axis_state_msg{};
+    Get_Encoder_Estimates_msg_t   get_encoder_estimates_msg{};
+    Set_Controller_Mode_msg_t     set_controller_mode_msg{};
+    Set_Input_Pos_msg_t           set_input_pos_msg{};
+    Set_Input_Vel_msg_t           set_input_vel_msg{};
+    Set_Input_Torque_msg_t        set_input_torque_msg{};
+    Set_Limits_msg_t              set_limits_msg{};
+    Set_Traj_Vel_Limit_msg_t      set_traj_vel_limit_msg{};
+    Set_Traj_Accel_Limits_msg_t   set_traj_accel_limits_msg{};
+    Set_Traj_Inertia_msg_t        set_traj_inertia_msg{};
+    Get_Iq_msg_t                  get_iq_msg{};
+    Get_Temperature_msg_t         get_temperature_msg{};
+    Reboot_msg_t                  reboot_msg{};
+    Get_Bus_Voltage_Current_msg_t get_bus_voltage_current_msg{};
+    Clear_Errors_msg_t            clear_errors_msg{};
+    Set_Absolute_Position_msg_t   set_absolute_position_msg{};
+    Set_Pos_Gain_msg_t            set_pos_gain_msg{};
+    Set_Vel_Gains_msg_t           set_vel_gains_msg{};
+    Get_Torques_msg_t             get_torques_msg{};
+    Get_Controller_Error_msg_t    get_controller_error_msg{};
+    Enter_DFU_Mode_msg_t          enter_dfu_mode_msg{};
 
     enum CmdList {
         kGetVersionMsg           = 0x000,
@@ -715,7 +715,7 @@ struct ODriveArduinoCAN {
     };
 
     can_Message_t encode(const CmdList cmd) const {
-        can_Message_t msg;
+        can_Message_t msg{};
         msg.id  = (axis_id_ << kNumCmdIdBits) | cmd;
         msg.len = 8;
 
@@ -761,9 +761,9 @@ struct ODriveArduinoCAN {
         return static_cast<uint8_t>(msg_id & 0x01F);  // Bottom 5 bits
     }
 
-   private:
-    static const uint8_t kNumNodeIdBits = 6U;
-    static const uint8_t kNumCmdIdBits  = 5U;
+    uint32_t axis_id_ = 0;
 
-    const uint32_t axis_id_ = 0;
+   private:
+    static constexpr uint8_t kNumNodeIdBits = 6U;
+    static constexpr uint8_t kNumCmdIdBits  = 5U;
 };

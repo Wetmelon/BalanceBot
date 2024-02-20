@@ -2,12 +2,7 @@
 
 #include <algorithm>
 
-namespace odrv {
-
-template <class T>
-constexpr const T& clamp(const T& x, const T& lo, const T& hi) {
-    return std::min(std::max(x, lo), hi);
-}
+#include "utils.hpp"
 
 struct PIDController {
     struct Settings_t {
@@ -29,15 +24,13 @@ struct PIDController {
         const float d_term = (actual - last_actual) * settings.Kd;  // Derivative on measurement
 
         i_term += error * settings.Ki * Ts;
-        i_term = odrv::clamp(i_term, settings.iterm_min, settings.iterm_max);
+        i_term = bot::clamp(i_term, settings.iterm_min, settings.iterm_max);
         i_term = enable ? i_term : 0.0f;
 
-        return odrv::clamp(p_term + i_term + d_term, settings.output_min, settings.output_max);
+        return bot::clamp(p_term + i_term + d_term, settings.output_min, settings.output_max);
     }
 
    private:
     float i_term      = 0.0f;
     float last_actual = 0.0f;
 };
-
-}  // namespace odrv
