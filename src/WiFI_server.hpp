@@ -1,5 +1,6 @@
 #pragma once
 
+#include <FreeRTOS_SAMD21.h>
 #include <SPI.h>
 #include <WiFiNINA.h>
 
