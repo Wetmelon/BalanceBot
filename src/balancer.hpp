@@ -100,7 +100,7 @@ struct BotController {
 
         // Run balancing and steering controllers
         const float drive_torque = balancing.update(enable, drive_cmd, vel_actual, imu.pitch, imu.pitch_rate);
-        const float steer_torque = 0.0f;  // steer_control.update(enable, steer_cmd, yaw_rate, kControlLoopPeriod);
+        const float steer_torque = steering.update(enable, steer_cmd, yaw_rate, 0.01f);
 
         // Convert from drive/steer to left/right motor torques
         bot_can.right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
@@ -138,7 +138,7 @@ struct BotController {
 
             case State::Active: {
                 // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 20.0f;
+                bool pitch_over  = fabsf(imu.pitch) > 30.0f;
                 bool imu_timeout = imu.getIsTimedOut();
 
                 bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
@@ -185,7 +185,7 @@ struct BotController {
 
     Settings_t settings{
         .kWheelDiameter = 0.1524f,
-        .kComHeight     = 0.2f,
+        .kComHeight     = 0.18f,
         .kTrackWidth    = 1.0f,
         .kJ             = 1.0f,
         .balancing      = balancing.settings,
