@@ -2,5 +2,5 @@
     "board": "arduino:samd:mkrwifi1010",
     "sketch": "BalanceBot.ino",
     "output": "build/",
-    "port": "COM8"
+    "port": "COM3"
 }

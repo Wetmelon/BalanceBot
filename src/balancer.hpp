@@ -50,6 +50,7 @@ struct BotController {
     struct Settings_t {
         // Vehicle parameters
         const float kWheelDiameter;  // [m] Wheel Diameter
+        const float kComHeight;      // [m] Height of center of mass from floor
         const float kTrackWidth;     // [m] Distance between wheels
         const float kJ;              // [Nm/(rad/s^2)] Rotational inertia
 
@@ -94,8 +95,8 @@ struct BotController {
         const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
-        const float vel_actual = (vel_right + vel_left) / 2.0f;                           // [m/s] Vehicle speed
-        const float yaw_rate   = (vel_right - vel_left) / (2.0f * settings.kTrackWidth);  // [rad/s] Vehicle yaw rate, per motor sensors
+        const float vel_actual = (vel_right + vel_left) / 2.0f + (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
+        const float yaw_rate   = (vel_right - vel_left) / (2.0f * settings.kTrackWidth);                       // [rad/s] Vehicle yaw rate, per motor sensors
 
         // Run balancing and steering controllers
         const float drive_torque = balancing.update(enable, drive_cmd, vel_actual, imu.pitch, imu.pitch_rate);
@@ -110,6 +111,12 @@ struct BotController {
             bot_can.right_motor.set_input_torque_msg.Input_Torque = 0.0f;
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
+
+        Serial.print("Pitch: ");
+        Serial.print(imu.pitch);
+
+        Serial.print("\tVel: ");
+        Serial.println(vel_actual);
     }
 
     State run_state_machine(State state) {
@@ -178,6 +185,7 @@ struct BotController {
 
     Settings_t settings{
         .kWheelDiameter = 0.1524f,
+        .kComHeight     = 0.2f,
         .kTrackWidth    = 1.0f,
         .kJ             = 1.0f,
         .balancing      = balancing.settings,

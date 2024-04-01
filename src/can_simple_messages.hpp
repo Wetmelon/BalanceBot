@@ -684,32 +684,32 @@ struct ODriveArduinoCAN {
 
     void decode(const can_Message_t& msg) {
         switch (get_cmd_id(msg.id)) {
-            case kGetVersionMsg: get_version_msg.decode(msg); break;
+            // case kGetVersionMsg: get_version_msg.decode(msg); break;
             case kHeartbeatMsg: heartbeat_msg.decode(msg); break;
-            case kEstopMsg: estop_msg.decode(msg); break;
-            case kGetErrorMsg: get_error_msg.decode(msg); break;
-            case kSetAxisNodeIDMsg: set_axis_node_id_msg.decode(msg); break;
-            case kSetAxisStateMsg: set_axis_state_msg.decode(msg); break;
+            // case kEstopMsg: estop_msg.decode(msg); break;
+            // case kGetErrorMsg: get_error_msg.decode(msg); break;
+            // case kSetAxisNodeIDMsg: set_axis_node_id_msg.decode(msg); break;
+            // case kSetAxisStateMsg: set_axis_state_msg.decode(msg); break;
             case kGetEncoderEstimatesMsg: get_encoder_estimates_msg.decode(msg); break;
-            case kSetControllerModeMsg: set_controller_mode_msg.decode(msg); break;
-            case kSetInputPosMsg: set_input_pos_msg.decode(msg); break;
-            case kSetInputVelMsg: set_input_vel_msg.decode(msg); break;
-            case kSetInputTorqueMsg: set_input_torque_msg.decode(msg); break;
-            case kSetLimitsMsg: set_limits_msg.decode(msg); break;
-            case kSetTrajVelLimitMsg: set_traj_vel_limit_msg.decode(msg); break;
-            case kSetTrajAccelLimitsMsg: set_traj_accel_limits_msg.decode(msg); break;
-            case kSetTrajInertiaMsg: set_traj_inertia_msg.decode(msg); break;
-            case kGetIqMsg: get_iq_msg.decode(msg); break;
-            case kGetTemperatureMsg: get_temperature_msg.decode(msg); break;
-            case kRebootMsg: reboot_msg.decode(msg); break;
-            case kGetBusVoltageCurrentMsg: get_bus_voltage_current_msg.decode(msg); break;
-            case kClearErrorsMsg: clear_errors_msg.decode(msg); break;
-            case kSetAbsolutePositionMsg: set_absolute_position_msg.decode(msg); break;
-            case kSetPosGainMsg: set_pos_gain_msg.decode(msg); break;
-            case kSetVelGainsMsg: set_vel_gains_msg.decode(msg); break;
-            case kGetTorquesMsg: get_torques_msg.decode(msg); break;
-            case kGetControllerErrorMsg: get_controller_error_msg.decode(msg); break;
-            case kEnterDFUModeMsg: enter_dfu_mode_msg.decode(msg); break;
+            // case kSetControllerModeMsg: set_controller_mode_msg.decode(msg); break;
+            // case kSetInputPosMsg: set_input_pos_msg.decode(msg); break;
+            // case kSetInputVelMsg: set_input_vel_msg.decode(msg); break;
+            // case kSetInputTorqueMsg: set_input_torque_msg.decode(msg); break;
+            // case kSetLimitsMsg: set_limits_msg.decode(msg); break;
+            // case kSetTrajVelLimitMsg: set_traj_vel_limit_msg.decode(msg); break;
+            // case kSetTrajAccelLimitsMsg: set_traj_accel_limits_msg.decode(msg); break;
+            // case kSetTrajInertiaMsg: set_traj_inertia_msg.decode(msg); break;
+            // case kGetIqMsg: get_iq_msg.decode(msg); break;
+            // case kGetTemperatureMsg: get_temperature_msg.decode(msg); break;
+            // case kRebootMsg: reboot_msg.decode(msg); break;
+            // case kGetBusVoltageCurrentMsg: get_bus_voltage_current_msg.decode(msg); break;
+            // case kClearErrorsMsg: clear_errors_msg.decode(msg); break;
+            // case kSetAbsolutePositionMsg: set_absolute_position_msg.decode(msg); break;
+            // case kSetPosGainMsg: set_pos_gain_msg.decode(msg); break;
+            // case kSetVelGainsMsg: set_vel_gains_msg.decode(msg); break;
+            // case kGetTorquesMsg: get_torques_msg.decode(msg); break;
+            // case kGetControllerErrorMsg: get_controller_error_msg.decode(msg); break;
+            // case kEnterDFUModeMsg: enter_dfu_mode_msg.decode(msg); break;
             default: break;
         }
     };

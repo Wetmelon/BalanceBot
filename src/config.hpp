@@ -21,11 +21,11 @@ void configControllers() {
     bot_can.right_motor.set_limits_msg.Current_Limit  = 40.0f;
 
     // Balancing controller settings
-    controller.settings.balancing.vel_controller.Kp         = 0.0f;
+    controller.settings.balancing.vel_controller.Kp         = 8.0f;
     controller.settings.balancing.vel_controller.Ki         = 0.0f;
-    controller.settings.balancing.vel_controller.iterm_min  = -10.0f;  // [deg]
+    controller.settings.balancing.vel_controller.iterm_min  = -1.0f;  // [deg]
+    controller.settings.balancing.vel_controller.iterm_max  = 1.0f;   // [deg]
     controller.settings.balancing.vel_controller.output_min = -10.0f;  // [deg]
-    controller.settings.balancing.vel_controller.iterm_max  = 10.0f;   // [deg]
     controller.settings.balancing.vel_controller.output_max = 10.0f;   // [deg]
 
     controller.settings.balancing.pitch_controller.Kp         = 10.0f;

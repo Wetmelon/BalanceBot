@@ -11,6 +11,10 @@ constexpr float r2d(const float rad) {
     return rad * (180.0f / bot::kPi);
 }
 
+constexpr float d2r(const float deg) {
+    return deg * (bot::kPi / 180.0f);
+}
+
 struct Quaternion {
     float w, x, y, z;
 
