@@ -3,7 +3,7 @@
 
 #include <array>
 
-#include "src/MKRrgb.hpp"
+#include "src/MkrRgb.hpp"
 #include "src/ODriveEnums.h"
 #include "src/WiFI_server.hpp"
 #include "src/balancer.hpp"
@@ -46,7 +46,7 @@ void setup() {
     xTaskCreate(controlTask, "control Task", 256, nullptr, tskIDLE_PRIORITY + 4, &control_task);
     xTaskCreate(canTask, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 3, &can_task);
     xTaskCreate(imuTask, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 2, &imu_task);
-    xTaskCreate(wifiTask, "wifi Task", 256, nullptr, tskIDLE_PRIORITY + 1, &wifi_task);
+    //xTaskCreate(wifiTask, "wifi Task", 256, nullptr, tskIDLE_PRIORITY + 1, &wifi_task);
 
     // Start RTOS tasks
     Serial.println("Starting Scheduler");

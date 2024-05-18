@@ -184,9 +184,9 @@ struct BotController {
     }
 
     Settings_t settings{
-        .kWheelDiameter = 0.1524f,
-        .kComHeight     = 0.18f,
-        .kTrackWidth    = 1.0f,
+        .kWheelDiameter = 0.0900f,
+        .kComHeight     = 0.040f,
+        .kTrackWidth    = 0.162f,
         .kJ             = 1.0f,
         .balancing      = balancing.settings,
         .steering       = steering.settings,
