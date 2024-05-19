@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bot_can.hpp"
+#include <ServoInput.h>
 #include "imu_wrapper.hpp"
 #include "pid.hpp"
 #include "utils.hpp"
@@ -89,7 +90,7 @@ struct BotController {
         vertical_timer.reset();
     }
 
-    void step() {
+    void step(float drive_cmd_raw, float steer_cmd_raw) {
         // Blink orange LED at 1 sec
         bot::blink(1000);
 
@@ -100,11 +101,11 @@ struct BotController {
         const bool enable = (state == State::Active);
 
         // Get forward and left/right commands from joystick
-        CmdPair rx = getControllerCmds(enable);
+        const CmdPair rx = {drive_cmd_raw, steer_cmd_raw};
+        const CmdPair mapped_cmd = filterConditionCmds(rx);
 
-        // Yaw-priority ISO pattern mixer (maintains 100% wheel speed differential at 100% joystick steer position)
-        const float steer_cmd = 0.0f;  // rx.steer * 0.5f;
-        const float drive_cmd = 0.0f;  // rx.drive * (1.0f - abs(steer_cmd));
+        const float drive_cmd = mapped_cmd.drive;
+        const float steer_cmd = mapped_cmd.steer;
 
         // Motor speeds
         const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
@@ -128,25 +129,35 @@ struct BotController {
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        Serial.print("Pitch: ");
-        Serial.print(imu.pitch);
+        // Serial.print("\t d cmd raw: ");
+        // Serial.print(drive_cmd_raw);
+        // Serial.print("\t s cmd raw: ");
+        // Serial.print(steer_cmd_raw);
 
-        Serial.print("\tP Rate: ");
-        Serial.print(imu.pitch_rate);
+        // Serial.print("\t d cmd: ");
+        // Serial.print(drive_cmd);
+        // Serial.print("\t s cmd: ");
+        // Serial.print(steer_cmd);
 
-        Serial.print("\tT: ");
-        Serial.print(drive_torque);
+        // Serial.print("Pitch: ");
+        // Serial.print(imu.pitch);
 
-        // Serial.print("\tVl: ");
+        // Serial.print("\t P Rate: ");
+        // Serial.print(imu.pitch_rate);
+
+        // Serial.print("\t T: ");
+        // Serial.print(drive_torque);
+
+        // Serial.print("\t Vl: ");
         // Serial.print(vel_left);
 
-        // Serial.print("\tVr: ");
+        // Serial.print("\t Vr: ");
         // Serial.print(vel_right);
 
-        // Serial.print("\tVel: ");
+        // Serial.print("\t Vel: ");
         // Serial.print(vel_actual);
 
-        Serial.println();
+        // Serial.println();
     }
 
     State run_state_machine(State state) {
@@ -168,7 +179,7 @@ struct BotController {
 
             case State::Active: {
                 // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 30.0f;
+                bool pitch_over  = fabsf(imu.pitch) > 45.0f;
                 bool imu_timeout = imu.getIsTimedOut();
 
                 bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
@@ -197,21 +208,54 @@ struct BotController {
         return next_state;
     }
 
-    CmdPair filterCmds(const CmdPair& rx) {
-        // Lowpass filters
+    // Commands assumed to be in range [-1, 1]
+    // Outputs scaled to robot units [m/s, rad/s]
+    CmdPair filterConditionCmds(const CmdPair& rx) {
+
+        // Speed and turn rate joystick range TODO: move to settings
+        float drive_range = 2.0f; // [m/s]
+        float steer_range = 3.0f; // [rad/s]
+
+        // Deadband then,
+        // "expo curve" 2nd order map (quadratic) (with abs to keep sign)
+        CmdPair mapped_cmd = rx;
+        float k2 = 0.5f;
+        float k1 = 1.0f - k2;
+        float deadband_each = 0.05f; // total deadband width is 2*deadband_each
+        for (float cmd : {mapped_cmd.drive, mapped_cmd.steer}) {
+            // calc in absolute value, copy sign at the end
+            // deadband
+            float cmd_abs = fabsf(cmd);
+            if (cmd_abs < deadband_each) {
+                cmd_abs = 0.0f;
+            } else {
+                // remap from [deadband, 1] to [0, 1]
+                cmd_abs = (cmd_abs - deadband_each) / (1.0f - deadband_each);
+            }
+            // quadratic map
+            cmd_abs = k1 * cmd_abs + k2 * cmd_abs * cmd_abs;
+            // restore sign
+            cmd = copysignf(cmd_abs, cmd);
+        }
+
+        // Scale units
+        mapped_cmd.drive *= drive_range;
+        mapped_cmd.steer *= steer_range;
+
+        // Lowpass filters (tau set in LPF constructor)
         return {
-            drive_lpf.step(rx.drive),
-            steer_lpf.step(rx.steer),
+            drive_lpf.step(mapped_cmd.drive),
+            steer_lpf.step(mapped_cmd.steer),
         };
     }
 
-    CmdPair getControllerCmds(bool enable) {
-        // TODO:  Read controller
-        (void)enable;
+    // CmdPair getControllerCmds(bool enable) {
+    //     // TODO:  Read controller
+    //     (void)enable;
 
-        CmdPair rx{};
-        return filterCmds(rx);
-    }
+    //     CmdPair rx{};
+    //     return filterConditionCmds(rx);
+    // }
 
     Settings_t settings{
         .kWheelDiameter = 0.0900f,
@@ -223,8 +267,8 @@ struct BotController {
     };
 
    private:
-    bot::LPF   drive_lpf{bot::kControlLoopPeriod, 1.0f};
-    bot::LPF   steer_lpf{bot::kControlLoopPeriod, 1.0f};
+    bot::LPF   drive_lpf{bot::kControlLoopPeriod, 0.1f};
+    bot::LPF   steer_lpf{bot::kControlLoopPeriod, 0.1f};
     bot::Timer vertical_timer{2000};
 
     State             state{};

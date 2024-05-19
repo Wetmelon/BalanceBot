@@ -4,7 +4,7 @@ namespace bot {
 
 // Numbers
 constexpr float kPi                = PI;
-constexpr float kControlLoopPeriod = 0.01f;  // [sec] Control loop period in sec
+constexpr float kControlLoopPeriod = 0.012f;  // [sec] Control loop period in sec TODO HACK hardcoded, need to get from actual task loop rate setting
 
 template <class T>
 constexpr const T& clamp(const T& x, const T& lo, const T& hi) {

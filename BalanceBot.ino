@@ -1,5 +1,6 @@
 
 #include <FreeRTOS_SAMD21.h>
+#include <ServoInput.h>
 
 #include <array>
 
@@ -13,6 +14,9 @@
 #include "src/config.hpp"
 #include "src/imu_wrapper.hpp"
 #include "src/utils.hpp"
+
+ServoInputPin<0> rc_pwm_in_0;
+ServoInputPin<1> rc_pwm_in_1;
 
 // Global object initialization
 BotCanClass   bot_can;
@@ -38,6 +42,9 @@ void setup() {
     while ((millis() - start < 1000) && !Serial) {
         delay(1);
     }
+
+    rc_pwm_in_0.attach();
+    rc_pwm_in_1.attach();
 
     // Initialize MKR RGB LED
     pixel.setup();
@@ -74,9 +81,11 @@ static void controlTask(void *pvParameters) {
 
     // Run this code periodically at 100Hz
     for (;;) {
-        vTaskDelayUntil(&lastWakeTime, 10UL);
+        vTaskDelayUntil(&lastWakeTime, 12UL);
 
-        controller.step();
+        controller.step(
+            2.0f*(+(rc_pwm_in_1.getPercent() - 0.5f)),
+            2.0f*(-(rc_pwm_in_0.getPercent() - 0.5f)));
     }
 }
 
@@ -88,7 +97,7 @@ static void canTask(void *pvParameters) {
 
     // Run this code periodically at 100Hz
     for (;;) {
-        vTaskDelayUntil(&lastWakeTime, 10UL);
+        vTaskDelayUntil(&lastWakeTime, 12UL);
 
         bot_can.read();
         bot_can.send();
