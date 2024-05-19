@@ -18,7 +18,7 @@ struct BalanceController {
     float update(bool enable, float vel_target, float vel_meas, float pitch_meas, float pitch_rate_meas) {
         // Velocity controller outputs a pitch command
         // [deg/(m/s)] - body pitch / CoM velocity error
-        pitch_cmd = vel_controller.update(enable, vel_target, vel_meas, settings.Ts);
+        pitch_cmd = -1.0f * vel_controller.update(enable, vel_target, vel_meas, settings.Ts);
 
         // Pitch controller outputs a pitch rate command
         // [(deg/s) / deg] - body pitch rate / body pitch error
@@ -99,7 +99,7 @@ struct BotController {
         const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
-        const float vel_actual = (vel_right + vel_left) / 2.0f + (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
+        const float vel_actual = (vel_right + vel_left) / 2.0f - (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
         const float yaw_rate   = (vel_right - vel_left) / (2.0f * settings.kTrackWidth);                       // [rad/s] Vehicle yaw rate, per motor sensors
 
         // Run balancing and steering controllers
@@ -107,8 +107,8 @@ struct BotController {
         const float steer_torque = steering.update(enable, steer_cmd, yaw_rate, 0.01f);
 
         // Convert from drive/steer to left/right motor torques
-        bot_can.right_motor.set_input_torque_msg.Input_Torque = -0.5f * (drive_torque + steer_torque);
-        bot_can.left_motor.set_input_torque_msg.Input_Torque  = +0.5f * (drive_torque - steer_torque);
+        bot_can.right_motor.set_input_torque_msg.Input_Torque = -0.5f * (drive_torque - steer_torque);
+        bot_can.left_motor.set_input_torque_msg.Input_Torque  = +0.5f * (drive_torque + steer_torque);
 
         // Set commands to 0 if we're not in the active state
         if (state != State::Active) {
@@ -119,14 +119,17 @@ struct BotController {
         Serial.print("Pitch: ");
         Serial.print(imu.pitch);
 
-        Serial.print("\tVl: ");
-        Serial.print(vel_left);
+        Serial.print("\tPitch Rate: ");
+        Serial.print(imu.pitch_rate);
 
-        Serial.print("\tVr: ");
-        Serial.print(vel_right);
+        // Serial.print("\tVl: ");
+        // Serial.print(vel_left);
 
-        // Serial.print("\tVel: ");
-        // Serial.print(vel_actual);
+        // Serial.print("\tVr: ");
+        // Serial.print(vel_right);
+
+        Serial.print("\tVel: ");
+        Serial.print(vel_actual);
 
         Serial.println();
     }

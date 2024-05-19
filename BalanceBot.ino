@@ -32,7 +32,7 @@ void setup() {
     configControllers();
 
     // Initialize Serial
-    Serial.begin(115200);
+    Serial.begin(250000);
 
     const uint32_t start = millis();
     while ((millis() - start < 1000) && !Serial) {
