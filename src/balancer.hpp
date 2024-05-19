@@ -27,9 +27,21 @@ struct BalanceController {
         // Pitch rate controller outputs wheel torque / body pitch rate error.
         // J is a placeholder for inertia factors, leave at 1 for now
         // [Nm/(deg/s)] - wheel torque / body pitch rate error
-        const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate_meas, settings.Ts) * settings.J;
+        const float torque_cmd = pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate_meas, settings.Ts) * settings.J;
 
-        return torque_cmd;
+        // // add LPF(derivative) compensator to boost through the torque response of downstream systems
+        // float dgain = 0.006f; // 0.040f;
+        // float Tau = 0.010f;
+
+        // static float last_torque_cmd = 0.0f; // TODO: HACK: static is not scalable to multiple instances, make this a member variable
+        // static float Tboost_lpfstate = 0.0f;
+        // float dT_dt = (torque_cmd - last_torque_cmd) / settings.Ts;
+        // last_torque_cmd = torque_cmd;
+
+        // float dT_dt_boost = dgain * dT_dt;
+        // Tboost_lpfstate += (settings.Ts / Tau) * (dT_dt_boost - Tboost_lpfstate);
+
+        return torque_cmd; //+ Tboost_lpfstate;
     }
 
     Settings_t settings = {
@@ -107,8 +119,8 @@ struct BotController {
         const float steer_torque = steering.update(enable, steer_cmd, yaw_rate, 0.01f);
 
         // Convert from drive/steer to left/right motor torques
-        bot_can.right_motor.set_input_torque_msg.Input_Torque = -0.5f * (drive_torque - steer_torque);
-        bot_can.left_motor.set_input_torque_msg.Input_Torque  = +0.5f * (drive_torque + steer_torque);
+        bot_can.right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
+        bot_can.left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
 
         // Set commands to 0 if we're not in the active state
         if (state != State::Active) {
@@ -119,8 +131,11 @@ struct BotController {
         Serial.print("Pitch: ");
         Serial.print(imu.pitch);
 
-        Serial.print("\tPitch Rate: ");
+        Serial.print("\tP Rate: ");
         Serial.print(imu.pitch_rate);
+
+        Serial.print("\tT: ");
+        Serial.print(drive_torque);
 
         // Serial.print("\tVl: ");
         // Serial.print(vel_left);
@@ -128,8 +143,8 @@ struct BotController {
         // Serial.print("\tVr: ");
         // Serial.print(vel_right);
 
-        Serial.print("\tVel: ");
-        Serial.print(vel_actual);
+        // Serial.print("\tVel: ");
+        // Serial.print(vel_actual);
 
         Serial.println();
     }
