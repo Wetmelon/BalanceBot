@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algorithm>
+// #include <algorithm>
 
 #include "utils.hpp"
 
@@ -30,7 +30,7 @@ struct PIDController {
         return bot::clamp(p_term + i_term + d_term, settings.output_min, settings.output_max);
     }
 
-   private:
+//    private:
     float i_term      = 0.0f;
     float last_actual = 0.0f;
 };

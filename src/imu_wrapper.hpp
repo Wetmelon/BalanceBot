@@ -94,7 +94,7 @@ struct ImuWrapper {
             }};
 
             roll  = r2d(e.pitch);
-            pitch = 180.f - r2d(e.roll);
+            pitch = 180.f + r2d(e.roll);
             if (pitch > 180.f)
                 pitch -= 360.0;
             else if (pitch < -180.f)

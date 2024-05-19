@@ -1,6 +1,5 @@
 #pragma once
 
-// Adafruit Feather M4 CAN
 #include <CAN.h>
 #include <FreeRTOS_SAMD21.h>
 

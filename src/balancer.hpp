@@ -15,15 +15,19 @@ struct BalanceController {
         float Ts;
     };
 
-    float update(bool enable, float vel_target, float vel, float pitch, float pitch_rate) {
+    float update(bool enable, float vel_target, float vel_meas, float pitch_meas, float pitch_rate_meas) {
         // Velocity controller outputs a pitch command
-        pitch_cmd = vel_controller.update(enable, vel_target, vel, settings.Ts);
+        // [deg/(m/s)] - body pitch / CoM velocity error
+        pitch_cmd = vel_controller.update(enable, vel_target, vel_meas, settings.Ts);
 
         // Pitch controller outputs a pitch rate command
-        pitch_rate_cmd = pitch_controller.update(enable, pitch_cmd, pitch, settings.Ts);
+        // [(deg/s) / deg] - body pitch rate / body pitch error
+        pitch_rate_cmd = pitch_controller.update(enable, pitch_cmd, pitch_meas, settings.Ts);
 
-        // Pitch rate controller outputs an acceleration, and Tau = J * alpha
-        const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate, settings.Ts) * settings.J;
+        // Pitch rate controller outputs wheel torque / body pitch rate error.
+        // J is a placeholder for inertia factors, leave at 1 for now
+        // [Nm/(deg/s)] - wheel torque / body pitch rate error
+        const float torque_cmd = -1.0f * pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate_meas, settings.Ts) * settings.J;
 
         return torque_cmd;
     }
@@ -33,7 +37,7 @@ struct BalanceController {
         .pitch_controller      = pitch_controller.settings,
         .pitch_rate_controller = pitch_rate_controller.settings,
 
-        .J  = 1.0f,
+        .J  = 1.0f, // [placeholder for inertia factors, leave at 1 for now]
         .Ts = 0.01f,
     };
 
@@ -52,7 +56,7 @@ struct BotController {
         const float kWheelDiameter;  // [m] Wheel Diameter
         const float kComHeight;      // [m] Height of center of mass from floor
         const float kTrackWidth;     // [m] Distance between wheels
-        const float kJ;              // [Nm/(rad/s^2)] Rotational inertia
+        const float kJ;              // [placeholder for inertia factors, leave at 1 for now]
 
         BalanceController::Settings_t& balancing;
         PIDController::Settings_t&     steering;
@@ -91,7 +95,7 @@ struct BotController {
         const float drive_cmd = 0.0f;  // rx.drive * (1.0f - abs(steer_cmd));
 
         // Motor speeds
-        const float vel_right = bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
+        const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
         const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
@@ -103,8 +107,8 @@ struct BotController {
         const float steer_torque = steering.update(enable, steer_cmd, yaw_rate, 0.01f);
 
         // Convert from drive/steer to left/right motor torques
-        bot_can.right_motor.set_input_torque_msg.Input_Torque = +0.5f * (drive_torque + steer_torque);
-        bot_can.left_motor.set_input_torque_msg.Input_Torque  = -0.5f * (drive_torque - steer_torque);
+        bot_can.right_motor.set_input_torque_msg.Input_Torque = -0.5f * (drive_torque + steer_torque);
+        bot_can.left_motor.set_input_torque_msg.Input_Torque  = +0.5f * (drive_torque - steer_torque);
 
         // Set commands to 0 if we're not in the active state
         if (state != State::Active) {
@@ -115,8 +119,16 @@ struct BotController {
         Serial.print("Pitch: ");
         Serial.print(imu.pitch);
 
-        Serial.print("\tVel: ");
-        Serial.println(vel_actual);
+        Serial.print("\tVl: ");
+        Serial.print(vel_left);
+
+        Serial.print("\tVr: ");
+        Serial.print(vel_right);
+
+        // Serial.print("\tVel: ");
+        // Serial.print(vel_actual);
+
+        Serial.println();
     }
 
     State run_state_machine(State state) {
@@ -185,8 +197,8 @@ struct BotController {
 
     Settings_t settings{
         .kWheelDiameter = 0.0900f,
-        .kComHeight     = 0.040f,
-        .kTrackWidth    = 0.162f,
+        .kComHeight     = 0.065f,
+        .kTrackWidth    = 0.171f,
         .kJ             = 1.0f,
         .balancing      = balancing.settings,
         .steering       = steering.settings,
