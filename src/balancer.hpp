@@ -129,10 +129,10 @@ struct BotController {
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        // Serial.print("\t d cmd raw: ");
-        // Serial.print(drive_cmd_raw);
-        // Serial.print("\t s cmd raw: ");
-        // Serial.print(steer_cmd_raw);
+        Serial.print("\t d cmd raw: ");
+        Serial.print(drive_cmd_raw);
+        Serial.print("\t s cmd raw: ");
+        Serial.print(steer_cmd_raw);
 
         // Serial.print("\t d cmd: ");
         // Serial.print(drive_cmd);
@@ -157,7 +157,7 @@ struct BotController {
         // Serial.print("\t Vel: ");
         // Serial.print(vel_actual);
 
-        // Serial.println();
+        Serial.println();
     }
 
     State run_state_machine(State state) {
@@ -179,7 +179,7 @@ struct BotController {
 
             case State::Active: {
                 // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 45.0f;
+                bool pitch_over  = fabsf(imu.pitch) > 60.0f;
                 bool imu_timeout = imu.getIsTimedOut();
 
                 bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
@@ -221,7 +221,7 @@ struct BotController {
         CmdPair mapped_cmd = rx;
         float k2 = 0.5f;
         float k1 = 1.0f - k2;
-        float deadband_each = 0.05f; // total deadband width is 2*deadband_each
+        float deadband_each = 0.01f; // total deadband width is 2*deadband_each
         for (float cmd : {mapped_cmd.drive, mapped_cmd.steer}) {
             // calc in absolute value, copy sign at the end
             // deadband

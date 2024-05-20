@@ -83,9 +83,14 @@ static void controlTask(void *pvParameters) {
     for (;;) {
         vTaskDelayUntil(&lastWakeTime, 12UL);
 
+        float in0 = rc_pwm_in_0.getPercent();
+        float in1 = rc_pwm_in_1.getPercent();
+        if (in0 < 0.01f || in0 > 0.99f) in0 = 0.5f; // fix noise glitches TODO: use better hardware
+        if (in1 < 0.01f || in1 > 0.99f) in1 = 0.5f; // fix noise glitches TODO: use better hardware
+
         controller.step(
-            2.0f*(+(rc_pwm_in_1.getPercent() - 0.5f)),
-            2.0f*(-(rc_pwm_in_0.getPercent() - 0.5f)));
+            2.0f*(+(in1 - 0.5f)),
+            2.0f*(-(in0 - 0.5f)));
     }
 }
 
