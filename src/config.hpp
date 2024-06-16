@@ -14,11 +14,11 @@ void configControllers() {
     bot_can.right_motor.set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
 
     // Setup the velocity and current limits that we'll use
-    bot_can.left_motor.set_limits_msg.Velocity_Limit = 10.0f; // Not used!
-    bot_can.left_motor.set_limits_msg.Current_Limit  = 3.0f;  // Not used!
+    bot_can.left_motor.set_limits_msg.Velocity_Limit = 10.0f;  // Not used!
+    bot_can.left_motor.set_limits_msg.Current_Limit  = 3.0f;   // Not used!
 
-    bot_can.right_motor.set_limits_msg.Velocity_Limit = 10.0f; // Not used!
-    bot_can.right_motor.set_limits_msg.Current_Limit  = 3.0f;  // Not used!
+    bot_can.right_motor.set_limits_msg.Velocity_Limit = 10.0f;  // Not used!
+    bot_can.right_motor.set_limits_msg.Current_Limit  = 3.0f;   // Not used!
 
     // Vel limit of micros was set to 13.585 rps. Use around 13 rps for margin.
     // Vel limit for 90mm dia wheels: 3.67 m/s
@@ -50,7 +50,7 @@ void configControllers() {
     controller.settings.steering.Kp         = 0.2f;
     controller.settings.steering.Ki         = 0.4f;
     controller.settings.steering.iterm_min  = -0.3f;  // [Nm]
-    controller.settings.steering.iterm_max  = 0.3f;  // [Nm]
+    controller.settings.steering.iterm_max  = 0.3f;   // [Nm]
     controller.settings.steering.output_min = -0.5f;  // [Nm]
-    controller.settings.steering.output_max = 0.5f;  // [Nm]
+    controller.settings.steering.output_max = 0.5f;   // [Nm]
 }

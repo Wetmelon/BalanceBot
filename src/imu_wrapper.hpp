@@ -95,12 +95,13 @@ struct ImuWrapper {
 
             roll  = r2d(e.pitch);
             pitch = 180.f + r2d(e.roll);
-            if (pitch > 180.f)
+            if (pitch > 180.f) {
                 pitch -= 360.0;
-            else if (pitch < -180.f)
+            } else if (pitch < -180.f) {
                 pitch += 360.f;
+            };
 
-            yaw   = r2d(e.yaw);
+            yaw = r2d(e.yaw);
 
             roll_rate  = r2d(_imu.getUncalibratedGyroY());
             pitch_rate = r2d(_imu.getUncalibratedGyroX());

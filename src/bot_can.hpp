@@ -18,7 +18,7 @@ struct BotCanClass {
         left_motor.axis_id_  = 0;
         right_motor.axis_id_ = 1;
 
-        // Start CAN at 500kbps
+        // Start CAN at 250kbps
         if (!CAN.begin(250000)) {
             Serial.println("CAN Begin Failed!");
         } else {

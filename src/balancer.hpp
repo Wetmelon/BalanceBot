@@ -1,7 +1,10 @@
 #pragma once
 
-#include "bot_can.hpp"
 #include <ServoInput.h>
+
+#include <initializer_list>
+
+#include "bot_can.hpp"
 #include "imu_wrapper.hpp"
 #include "pid.hpp"
 #include "utils.hpp"
@@ -30,19 +33,7 @@ struct BalanceController {
         // [Nm/(deg/s)] - wheel torque / body pitch rate error
         const float torque_cmd = pitch_rate_controller.update(enable, pitch_rate_cmd, pitch_rate_meas, settings.Ts) * settings.J;
 
-        // // add LPF(derivative) compensator to boost through the torque response of downstream systems
-        // float dgain = 0.006f; // 0.040f;
-        // float Tau = 0.010f;
-
-        // static float last_torque_cmd = 0.0f; // TODO: HACK: static is not scalable to multiple instances, make this a member variable
-        // static float Tboost_lpfstate = 0.0f;
-        // float dT_dt = (torque_cmd - last_torque_cmd) / settings.Ts;
-        // last_torque_cmd = torque_cmd;
-
-        // float dT_dt_boost = dgain * dT_dt;
-        // Tboost_lpfstate += (settings.Ts / Tau) * (dT_dt_boost - Tboost_lpfstate);
-
-        return torque_cmd; //+ Tboost_lpfstate;
+        return torque_cmd;  //+ Tboost_lpfstate;
     }
 
     Settings_t settings = {
@@ -50,7 +41,7 @@ struct BalanceController {
         .pitch_controller      = pitch_controller.settings,
         .pitch_rate_controller = pitch_rate_controller.settings,
 
-        .J  = 1.0f, // [placeholder for inertia factors, leave at 1 for now]
+        .J  = 1.0f,  // [placeholder for inertia factors, leave at 1 for now]
         .Ts = 0.01f,
     };
 
@@ -101,15 +92,15 @@ struct BotController {
         const bool enable = (state == State::Active);
 
         // Get forward and left/right commands from joystick
-        const CmdPair rx = {drive_cmd_raw, steer_cmd_raw};
+        const CmdPair rx         = {drive_cmd_raw, steer_cmd_raw};
         const CmdPair mapped_cmd = filterConditionCmds(rx);
 
         const float drive_cmd = mapped_cmd.drive;
         const float steer_cmd = mapped_cmd.steer;
 
         // Motor speeds
-        const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
-        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
+        const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] right wheel speed
+        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);   // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
         const float vel_actual = (vel_right + vel_left) / 2.0f - (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
@@ -211,17 +202,16 @@ struct BotController {
     // Commands assumed to be in range [-1, 1]
     // Outputs scaled to robot units [m/s, rad/s]
     CmdPair filterConditionCmds(const CmdPair& rx) {
-
         // Speed and turn rate joystick range TODO: move to settings
-        float drive_range = 2.0f; // [m/s]
-        float steer_range = 3.0f; // [rad/s]
+        float drive_range = 2.0f;  // [m/s]
+        float steer_range = 3.0f;  // [rad/s]
 
         // Deadband then,
         // "expo curve" 2nd order map (quadratic) (with abs to keep sign)
-        CmdPair mapped_cmd = rx;
-        float k2 = 0.5f;
-        float k1 = 1.0f - k2;
-        float deadband_each = 0.01f; // total deadband width is 2*deadband_each
+        CmdPair mapped_cmd    = rx;
+        float   k2            = 0.5f;
+        float   k1            = 1.0f - k2;
+        float   deadband_each = 0.01f;  // total deadband width is 2*deadband_each
         for (float cmd : {mapped_cmd.drive, mapped_cmd.steer}) {
             // calc in absolute value, copy sign at the end
             // deadband
@@ -248,14 +238,6 @@ struct BotController {
             steer_lpf.step(mapped_cmd.steer),
         };
     }
-
-    // CmdPair getControllerCmds(bool enable) {
-    //     // TODO:  Read controller
-    //     (void)enable;
-
-    //     CmdPair rx{};
-    //     return filterConditionCmds(rx);
-    // }
 
     Settings_t settings{
         .kWheelDiameter = 0.0900f,

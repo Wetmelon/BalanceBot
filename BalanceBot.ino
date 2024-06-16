@@ -43,6 +43,7 @@ void setup() {
         delay(1);
     }
 
+    // Attach on-change interrupts to GPIO pins used for PWM input
     rc_pwm_in_0.attach();
     rc_pwm_in_1.attach();
 
@@ -53,7 +54,7 @@ void setup() {
     xTaskCreate(controlTask, "control Task", 256, nullptr, tskIDLE_PRIORITY + 4, &control_task);
     xTaskCreate(canTask, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 3, &can_task);
     xTaskCreate(imuTask, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 2, &imu_task);
-    //xTaskCreate(wifiTask, "wifi Task", 256, nullptr, tskIDLE_PRIORITY + 1, &wifi_task);
+    // xTaskCreate(wifiTask, "wifi Task", 256, nullptr, tskIDLE_PRIORITY + 1, &wifi_task);
 
     // Start RTOS tasks
     Serial.println("Starting Scheduler");
@@ -85,12 +86,17 @@ static void controlTask(void *pvParameters) {
 
         float in0 = rc_pwm_in_0.getPercent();
         float in1 = rc_pwm_in_1.getPercent();
-        if (in0 < 0.01f || in0 > 0.99f) in0 = 0.5f; // fix noise glitches TODO: use better hardware
-        if (in1 < 0.01f || in1 > 0.99f) in1 = 0.5f; // fix noise glitches TODO: use better hardware
+        if ((in0 < 0.01f) || (in0 > 0.99f)) {
+            in0 = 0.5f;
+        }  // fix noise glitches TODO: use better hardware
+        if ((in1 < 0.01f) || (in1 > 0.99f)) {
+            in1 = 0.5f;
+        }  // fix noise glitches TODO: use better hardware
 
         controller.step(
-            2.0f*(+(in1 - 0.5f)),
-            2.0f*(-(in0 - 0.5f)));
+            2.0f * (+(in1 - 0.5f)),
+            2.0f * (-(in0 - 0.5f))
+        );
     }
 }
 
