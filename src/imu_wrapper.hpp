@@ -4,7 +4,7 @@
 #include <Wire.h>
 
 #include "./SparkFun_BNO080_Arduino_Library.h"
-#include "MkrRgb.hpp"
+#include "portenta_rgb.hpp"
 #include "utils.hpp"
 
 constexpr float r2d(const float rad) {
@@ -56,18 +56,19 @@ struct ImuWrapper {
     float yaw        = 0.0f;
     float yaw_rate   = 0.0f;
 
-    bool begin() {
-        Wire.begin();
+    bool begin(TwoWire& i2cPort) {
+        i2cPort.begin();
         // Serial.println("Wire started");
 
         // _imu.enableDebugging(Serial);
 
-        while (!_imu.begin(0x4A)) {
-            pixel.setColor(127, 0, 0);
+        pixel.setColor(127, 0, 0);
+        while (!_imu.begin(0x4A, i2cPort)) {
+            delayMicroseconds(100);
         }
         pixel.setColor(0, 0, 127);
 
-        Wire.setClock(400000);
+        i2cPort.setClock(400000);
         // Serial.println("Wire clock set");
 
         // _imu.enableGyroIntegratedRotationVector(10);

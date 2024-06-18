@@ -1,32 +1,32 @@
 
-#include <FreeRTOS_SAMD21.h>
+#include <Arduino_FreeRTOS.h>
+#include <FreeRTOSConfig.h>
 
 #include <array>
 
-#include "src/MKRrgb.hpp"
 #include "src/ODriveEnums.h"
-#include "src/WiFI_server.hpp"
 #include "src/balancer.hpp"
 #include "src/bot_can.hpp"
 #include "src/can_helpers.hpp"
 #include "src/can_simple_messages.hpp"
 #include "src/config.hpp"
 #include "src/imu_wrapper.hpp"
+#include "src/portenta_rgb.hpp"
 #include "src/utils.hpp"
+
+#ifdef ARDUINO_PORTENTA_C33
+// TODO:  Make it easy to configure this
+#endif
 
 // Global object initialization
 BotCanClass   bot_can;
 BotController controller;
 ImuWrapper    imu;
-MKRrgb        pixel;
+RgbC33        pixel;
 
 // Task handles
-static TaskHandle_t imu_task;
-static TaskHandle_t can_task;
-static TaskHandle_t control_task;
-static TaskHandle_t wifi_task;
-
-static WiFiServer server{80};
+static TaskHandle_t taskHandle_1kHz;
+static TaskHandle_t taskHandle_100Hz;
 
 void setup() {
     configControllers();
@@ -39,14 +39,15 @@ void setup() {
         delay(1);
     }
 
-    // Initialize MKR RGB LED
+    // Init objects
     pixel.setup();
+    imu.begin(Wire2);
+    bot_can.setup();
+    controller.begin();
 
     // Create RTOS tasks
-    xTaskCreate(controlTask, "control Task", 256, nullptr, tskIDLE_PRIORITY + 4, &control_task);
-    xTaskCreate(canTask, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 3, &can_task);
-    xTaskCreate(imuTask, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 2, &imu_task);
-    xTaskCreate(wifiTask, "wifi Task", 256, nullptr, tskIDLE_PRIORITY + 1, &wifi_task);
+    xTaskCreate(periodic_1kHz, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 3, &taskHandle_1kHz);
+    xTaskCreate(periodic_100Hz, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 2, &taskHandle_100Hz);
 
     // Start RTOS tasks
     Serial.println("Starting Scheduler");
@@ -61,61 +62,31 @@ void setup() {
     }
 }
 
-// RTOS Idle Loop
-void loop() {
-    delay(1000);
-}
-
-static void controlTask(void *pvParameters) {
+static void periodic_100Hz(void *pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
-
-    // Initialize controller
-    controller.begin();
 
     // Run this code periodically at 100Hz
     for (;;) {
         vTaskDelayUntil(&lastWakeTime, 10UL);
 
         controller.step();
-    }
-}
-
-static void canTask(void *pvParameters) {
-    TickType_t lastWakeTime = xTaskGetTickCount();
-
-    // Initialize CAN bus
-    bot_can.setup();
-
-    // Run this code periodically at 100Hz
-    for (;;) {
-        vTaskDelayUntil(&lastWakeTime, 10UL);
-
-        bot_can.read();
         bot_can.send();
     }
 }
 
-static void imuTask(void *pvParameters) {
+static void periodic_1kHz(void *pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
-
-    // Start the IMU on i2c, at 400kHz
-    imu.begin();
 
     // Run this code periodically at 1kHz
     for (;;) {
         vTaskDelayUntil(&lastWakeTime, 1UL);
 
         imu.read();
+        bot_can.read();
     }
 }
 
-static void wifiTask(void *pvParameters) {
-    TickType_t lastWakeTime = xTaskGetTickCount();
-
-    Wifisetup(server);
-
-    // Run this code periodically
-    for (;;) {
-        Wifiloop(server);
-    }
+// RTOS Idle Loop
+void loop() {
+    delay(1000);
 }

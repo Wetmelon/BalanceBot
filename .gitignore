@@ -35,3 +35,4 @@ build/
 .vscode/c_cpp_properties.json
 
 WiFi_secrets.hpp
+arduino.json
