@@ -200,27 +200,6 @@ struct BotController {
         return next_state;
     }
 
-    static float deadband(float cmd) {
-        float k2            = 0.5f;
-        float k1            = 1.0f - k2;
-        float deadband_each = 0.01f;  // total deadband width is 2*deadband_each
-                                      // calc in absolute value, copy sign at the end
-
-        // deadband
-        float cmd_abs = fabsf(cmd);
-        if (cmd_abs < deadband_each) {
-            cmd_abs = 0.0f;
-        } else {
-            // remap from [deadband, 1] to [0, 1]
-            cmd_abs = (cmd_abs - deadband_each) / (1.0f - deadband_each);
-        }
-        // quadratic map
-        cmd_abs = k1 * cmd_abs + k2 * cmd_abs * cmd_abs;
-        // restore sign
-        cmd = copysignf(cmd_abs, cmd);
-        return cmd;
-    }
-
     // Commands assumed to be in range [-1, 1]
     // Outputs scaled to robot units [m/s, rad/s]
     CmdPair filterConditionCmds(const CmdPair& rx) {
@@ -231,8 +210,8 @@ struct BotController {
         // Deadband then,
         // "expo curve" 2nd order map (quadratic) (with abs to keep sign)
         const CmdPair mapped_cmd = {
-            .drive = deadband(rx.drive) * drive_range,
-            .steer = deadband(rx.steer) * steer_range,
+            .drive = bot::remap_joystick(rx.drive) * drive_range,
+            .steer = bot::remap_joystick(rx.steer) * steer_range,
         };
 
         // Lowpass filters (tau set in LPF constructor)
