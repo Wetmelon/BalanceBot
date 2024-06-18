@@ -2,7 +2,6 @@
 
 #include <ServoInput.h>
 
-#include <array>
 #include <initializer_list>
 
 #include "bot_can.hpp"
