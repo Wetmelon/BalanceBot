@@ -11,6 +11,30 @@ constexpr const T& clamp(const T& x, const T& lo, const T& hi) {
     return std::min(std::max(x, lo), hi);
 }
 
+float remap_joystick(float cmd) {
+    float k2            = 0.5f;
+    float k1            = 1.0f - k2;
+    float deadband_each = 0.01f;  // total deadband width is 2*deadband_each
+                                  // calc in absolute value, copy sign at the end
+
+    // deadband
+    float cmd_abs = fabsf(cmd);
+    if (cmd_abs < deadband_each) {
+        cmd_abs = 0.0f;
+    } else {
+        // remap from [deadband, 1] to [0, 1]
+        cmd_abs = (cmd_abs - deadband_each) / (1.0f - deadband_each);
+    }
+
+    // quadratic map
+    cmd_abs = (k1 * cmd_abs) + k2 * sq(cmd_abs);
+
+    // restore sign
+    cmd = copysignf(cmd_abs, cmd);
+
+    return cmd;
+}
+
 void blink(const uint32_t blink_period_ms) {
     static uint32_t last_blink = millis();
     static bool     led_state  = false;
