@@ -13,15 +13,13 @@ void sendCanMsg(const can_Message_t &msg) {
 
     if (ret != 1) {
         Serial.print("Tx Failed: ");
-        Serial.print(ret, HEX);
+        Serial.print(ret);
         Serial.print(" - ");
         Serial.println(c33msg);
-    } else {
-        Serial.println("Tx Success");
     }
 
     // TODO:  Figure out why this is needed - no FIFO in R7FA6M5_CAN ???
-    delayMicroseconds(500);
+    // delayMicroseconds(500);
 }
 
 struct BotCanClass {
@@ -34,9 +32,6 @@ struct BotCanClass {
 
         left_motor.axis_id_  = 0;
         right_motor.axis_id_ = 1;
-
-        // Start CAN at 500kbps
-        CAN1.disableInternalLoopback();
 
         if (!CAN1.begin(CanBitRate::BR_500k)) {
             Serial.println("CAN Begin Failed!");
@@ -76,6 +71,8 @@ struct BotCanClass {
     }
 
     void send() {
+        CAN1.clearError();
+
         // Send the periodic CAN messages
         sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));
         sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));

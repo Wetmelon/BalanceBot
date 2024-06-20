@@ -112,11 +112,11 @@ struct BotController {
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        Serial.print("Pitch: ");
-        Serial.print(imu.pitch);
+        // Serial.print("Pitch: ");
+        // Serial.print(imu.pitch);
 
-        Serial.print("\tVel: ");
-        Serial.println(vel_actual);
+        // Serial.print("\tVel: ");
+        // Serial.println(vel_actual);
     }
 
     State run_state_machine(State state) {
