@@ -91,8 +91,8 @@ struct BotController {
         const float drive_cmd = 0.0f;  // rx.drive * (1.0f - abs(steer_cmd));
 
         // Motor speeds
-        const float vel_right = bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
-        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
+        const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] right wheel speed
+        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);   // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
         const float vel_actual = (vel_right + vel_left) / 2.0f + (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
@@ -112,11 +112,11 @@ struct BotController {
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        Serial.print("Pitch: ");
-        Serial.print(imu.pitch);
+        // Serial.print("Pitch: ");
+        // Serial.print(imu.pitch);
 
-        Serial.print("\tVel: ");
-        Serial.println(vel_actual);
+        // Serial.print("\tVel: ");
+        // Serial.println(vel_actual);
     }
 
     State run_state_machine(State state) {
