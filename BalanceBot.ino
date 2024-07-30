@@ -7,11 +7,12 @@
 #include "src/MkrRgb.hpp"
 #include "src/ODriveEnums.h"
 #include "src/WiFI_server.hpp"
-#include "src/balancer.hpp"
+// #include "src/balancer.hpp"
+#include "src/reaction_wheel.hpp"
 #include "src/bot_can.hpp"
 #include "src/can_helpers.hpp"
 #include "src/can_simple_messages.hpp"
-#include "src/config.hpp"
+// #include "src/config.hpp"
 #include "src/imu_wrapper.hpp"
 #include "src/utils.hpp"
 
@@ -20,7 +21,8 @@ ServoInputPin<1> rc_pwm_in_1;
 
 // Global object initialization
 BotCanClass   bot_can;
-BotController controller;
+// BotController controller;
+ReactionWheelController controller;
 ImuWrapper    imu;
 MKRrgb        pixel;
 
@@ -30,10 +32,10 @@ static TaskHandle_t can_task;
 static TaskHandle_t control_task;
 static TaskHandle_t wifi_task;
 
-static WiFiServer server{80};
+// static WiFiServer server{80};
 
 void setup() {
-    configControllers();
+    // configControllers();
 
     // Initialize Serial
     Serial.begin(250000);
@@ -77,26 +79,28 @@ void loop() {
 static void controlTask(void *pvParameters) {
     TickType_t lastWakeTime = xTaskGetTickCount();
 
+    vTaskDelayUntil(&lastWakeTime, 1000UL);
+
     // Initialize controller
     controller.begin();
+
+    float in0 = 0.5f;
+    float in1 = 0.5f;
 
     // Run this code periodically at 100Hz
     for (;;) {
         vTaskDelayUntil(&lastWakeTime, 12UL);
 
-        float in0 = rc_pwm_in_0.getPercent();
-        float in1 = rc_pwm_in_1.getPercent();
-        if ((in0 < 0.01f) || (in0 > 0.99f)) {
-            in0 = 0.5f;
+        float in0_tmp = rc_pwm_in_0.getPercent();
+        float in1_tmp = rc_pwm_in_1.getPercent();
+        if ((in0_tmp > 0.01f) && (in0_tmp < 0.99f)) {
+            in0 = in0_tmp;
         }  // fix noise glitches TODO: use better hardware
-        if ((in1 < 0.01f) || (in1 > 0.99f)) {
-            in1 = 0.5f;
+        if ((in1_tmp > 0.01f) && (in1_tmp < 0.99f)) {
+            in1 = in1_tmp;
         }  // fix noise glitches TODO: use better hardware
 
-        controller.step(
-            2.0f * (+(in1 - 0.5f)),
-            2.0f * (-(in0 - 0.5f))
-        );
+        controller.step(in0, in1);
     }
 }
 
@@ -129,13 +133,13 @@ static void imuTask(void *pvParameters) {
     }
 }
 
-static void wifiTask(void *pvParameters) {
-    TickType_t lastWakeTime = xTaskGetTickCount();
+// static void wifiTask(void *pvParameters) {
+//     TickType_t lastWakeTime = xTaskGetTickCount();
 
-    Wifisetup(server);
+//     Wifisetup(server);
 
-    // Run this code periodically
-    for (;;) {
-        Wifiloop(server);
-    }
-}
+//     // Run this code periodically
+//     for (;;) {
+//         Wifiloop(server);
+//     }
+// }

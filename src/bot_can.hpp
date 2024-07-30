@@ -20,9 +20,9 @@ struct BotCanClass {
 
         // Start CAN at 250kbps
         if (!CAN.begin(250000)) {
-            Serial.println("CAN Begin Failed!");
+            for(;;) Serial.println("CAN Begin Failed!");
         } else {
-            Serial.println("Connected to CAN at 500kbps");
+            Serial.println("Connected to CAN at 250kbps");
         }
 
         sendCanMsg(left_motor.encode(ODriveArduinoCAN::kClearErrorsMsg));
@@ -31,16 +31,16 @@ struct BotCanClass {
 
     void setAxisStates(ODriveAxisState state) {
         left_motor.set_axis_state_msg.Axis_Requested_State  = state;
-        right_motor.set_axis_state_msg.Axis_Requested_State = state;
+        // right_motor.set_axis_state_msg.Axis_Requested_State = state;
 
-        sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
-        sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
+        // sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
+        // sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
 
-        sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
-        sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
+        // sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
+        // sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
 
         sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
-        sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
+        // sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
     }
 
     void read() {
