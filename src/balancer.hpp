@@ -149,18 +149,35 @@ struct BotController {
 
                     bot_can.setAxisStates(AXIS_STATE_IDLE);
                     next_state = State::Idle;
+
+                    if (pitch_over) {
+                        Serial.println("Pitch Over");
+                    }
+
+                    if (left_error) {
+                        Serial.print("Left Error: ");
+                        Serial.println(bot_can.left_motor.heartbeat_msg.Axis_Error, HEX);
+                    }
+                    
+                    if (right_error) {
+                        Serial.print("Right Error: ");
+                        Serial.println(bot_can.right_motor.heartbeat_msg.Axis_Error, HEX);
+                    }
                 }
 
                 if (imu_timeout) {
                     bot_can.setAxisStates(AXIS_STATE_IDLE);
                     next_state = State::Error;
+                    Serial.println("IMU Timeout");
                 }
 
             } break;
 
             case State::Error:
+                Serial.println("Error State!");
             default: {
                 bot_can.setAxisStates(AXIS_STATE_IDLE);
+                Serial.println("Invalid State!");
             } break;
         }
 
