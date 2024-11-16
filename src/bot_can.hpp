@@ -17,9 +17,6 @@ void sendCanMsg(const can_Message_t &msg) {
         Serial.print(" - ");
         Serial.println(c33msg);
     }
-
-    // TODO:  Figure out why this is needed - no FIFO in R7FA6M5_CAN ???
-    // delayMicroseconds(500);
 }
 
 struct BotCanClass {

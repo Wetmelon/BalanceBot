@@ -27,8 +27,11 @@ RgbC33        pixel;
 // Task handles
 static TaskHandle_t taskHandle_1kHz;
 static TaskHandle_t taskHandle_100Hz;
+static TaskHandle_t taskHandle_1Hz;
 
 void setup() {
+    pinMode(PIN_D7, PinMode::OUTPUT);
+
     configControllers();
 
     // Initialize Serial
@@ -48,6 +51,7 @@ void setup() {
     // Create RTOS tasks
     xTaskCreate(periodic_1kHz, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 3, &taskHandle_1kHz);
     xTaskCreate(periodic_100Hz, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 2, &taskHandle_100Hz);
+    xTaskCreate(periodic_1Hz, "Beep task", 256, nullptr, tskIDLE_PRIORITY + 1, &taskHandle_1Hz);
 
     // Start RTOS tasks
     Serial.println("Starting Scheduler");
@@ -59,6 +63,14 @@ void setup() {
         Serial.println("Scheduler failed!");
         Serial.flush();
         delay(1000);
+    }
+}
+
+static void periodic_1Hz(void *pvParameters) {
+    TickType_t lastWakeTime = xTaskGetTickCount();
+    for (;;) {
+        vTaskDelayUntil(&lastWakeTime, 1000UL);
+        Serial.println(".");
     }
 }
 
@@ -75,7 +87,8 @@ static void periodic_100Hz(void *pvParameters) {
 }
 
 static void periodic_1kHz(void *pvParameters) {
-    TickType_t lastWakeTime = xTaskGetTickCount();
+    TickType_t  lastWakeTime = xTaskGetTickCount();
+    static bool flag         = false;
 
     // Run this code periodically at 1kHz
     for (;;) {

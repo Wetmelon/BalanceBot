@@ -4,6 +4,7 @@
 #include "imu_wrapper.hpp"
 #include "pid.hpp"
 #include "utils.hpp"
+#include <Arduino.h>
 
 struct BalanceController {
     struct Settings_t {
@@ -122,6 +123,20 @@ struct BotController {
     State run_state_machine(State state) {
         State next_state = state;
 
+        const bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
+        const bool right_error = bot_can.right_motor.heartbeat_msg.Axis_Error != 0;
+
+        digitalWrite(PIN_D7, left_error || right_error);
+        if (left_error) {
+            Serial.print("Left Error: ");
+            Serial.println(bot_can.left_motor.heartbeat_msg.Axis_Error, HEX);
+        }
+
+        if (right_error) {
+            Serial.print("Right Error: ");
+            Serial.println(bot_can.right_motor.heartbeat_msg.Axis_Error, HEX);
+        }
+
         switch (state) {
             case State::Idle: {
                 // If pitch is within 5 degrees for 2 seconds, enable motors
@@ -138,11 +153,8 @@ struct BotController {
 
             case State::Active: {
                 // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 30.0f;
-                bool imu_timeout = imu.getIsTimedOut();
-
-                bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
-                bool right_error = bot_can.right_motor.heartbeat_msg.Axis_Error != 0;
+                const bool pitch_over  = fabsf(imu.pitch) > 30.0f;
+                const bool imu_timeout = imu.getIsTimedOut();
 
                 if (pitch_over || left_error || right_error) {
                     vertical_timer.reset();
@@ -152,16 +164,6 @@ struct BotController {
 
                     if (pitch_over) {
                         Serial.println("Pitch Over");
-                    }
-
-                    if (left_error) {
-                        Serial.print("Left Error: ");
-                        Serial.println(bot_can.left_motor.heartbeat_msg.Axis_Error, HEX);
-                    }
-                    
-                    if (right_error) {
-                        Serial.print("Right Error: ");
-                        Serial.println(bot_can.right_motor.heartbeat_msg.Axis_Error, HEX);
                     }
                 }
 
