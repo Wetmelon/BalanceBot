@@ -5,8 +5,9 @@ struct RgbC33 {
         pinMode(LEDR, OUTPUT);
         pinMode(LEDG, OUTPUT);
         pinMode(LEDB, OUTPUT);
-
-        setColor(0, 50, 0);
+        digitalWrite(LEDR, HIGH);
+        digitalWrite(LEDG, HIGH);
+        digitalWrite(LEDB, HIGH);
     }
 
     void setColor(uint8_t R, uint8_t G, uint8_t B) {
