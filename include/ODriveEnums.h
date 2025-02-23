@@ -1,6 +1,7 @@
 
-#ifndef ODriveEnums_h
-#define ODriveEnums_h
+#pragma once
+
+#include <array>
 
 // ODrive.GpioMode
 enum ODriveGpioMode {
@@ -205,5 +206,3 @@ enum ODriveCanError {
     CAN_ERROR_NONE              = 0x00000000,
     CAN_ERROR_DUPLICATE_CAN_IDS = 0x00000001,
 };
-
-#endif
