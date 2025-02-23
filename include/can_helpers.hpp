@@ -46,15 +46,11 @@ struct can_Message_t : public Printable {
 
 template <typename T, size_t N>
 T can_getSignal(const uint8_t (&buf)[N], const size_t startBit, const size_t length, const bool isIntel) {
-    union {
-        T retVal;
-    };
-
     const uint64_t mask  = length < 64 ? (1ULL << length) - 1ULL : -1ULL;
     const uint8_t  shift = isIntel ? startBit : (64 - startBit) - length;
 
     uint64_t tempVal = 0U;
-    std::memcpy(&tempVal, buf, N);
+    std::memcpy(&tempVal, &buf[0], N);
     if (isIntel) {
         tempVal = (tempVal >> shift) & mask;
     } else {
@@ -62,6 +58,8 @@ T can_getSignal(const uint8_t (&buf)[N], const size_t startBit, const size_t len
         tempVal = (tempVal >> shift) & mask;
     }
 
+    T retVal;
+    std::memcpy(&retVal, &tempVal, sizeof(T));
     return retVal;
 }
 

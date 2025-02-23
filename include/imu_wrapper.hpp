@@ -62,11 +62,9 @@ struct ImuWrapper {
 
         // _imu.enableDebugging(Serial);
 
-        pixel.setColor(127, 0, 0);
         while (!_imu.begin(0x4A, i2cPort)) {
             delayMicroseconds(100);
         }
-        pixel.setColor(0, 0, 127);
 
         i2cPort.setClock(400000);
         // Serial.println("Wire clock set");

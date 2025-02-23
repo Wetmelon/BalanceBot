@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Arduino.h>
+
 #include "bot_can.hpp"
 #include "imu_wrapper.hpp"
 #include "pid.hpp"
 #include "utils.hpp"
-#include <Arduino.h>
 
 struct BalanceController {
     struct Settings_t {
@@ -70,6 +71,8 @@ struct BotController {
         Error
     };
 
+    static constexpr std::array StateText = {"Idle", "Active", "Error"};
+
     void begin() {
         vertical_timer.reset();
     }
@@ -113,10 +116,13 @@ struct BotController {
         }
 
         // Serial.print("Pitch: ");
-        // Serial.print(imu.pitch);
+        // Serial.println(imu.pitch);
 
-        // Serial.print("\tVel: ");
-        // Serial.println(vel_actual);
+        // Serial.print("\tL: ");
+        // Serial.print(vel_left);
+        // Serial.print("\tR: ");
+        // Serial.print(vel_right);
+        // Serial.println();
     }
 
     State run_state_machine(State state) {
@@ -181,6 +187,9 @@ struct BotController {
                 Serial.println("Invalid State!");
             } break;
         }
+
+        if (state != next_state)
+            Serial.println(StateText[static_cast<int>(next_state)]);
 
         return next_state;
     }

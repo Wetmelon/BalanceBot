@@ -6,20 +6,17 @@
 #include "can_simple_messages.hpp"
 
 // Helper function for sending can messages
-void sendCanMsg(const can_Message_t &msg) {
-    const CanMsg c33msg{CanStandardId(msg.id), msg.len, msg.data};
-
-    auto ret = CAN1.write(c33msg);
-
-    if (ret != 1) {
-        Serial.print("Tx Failed: ");
-        Serial.print(ret);
-        Serial.print(" - ");
-        Serial.println(c33msg);
-    }
-}
 
 struct BotCanClass {
+    void sendCanMsg(const can_Message_t &msg) {
+        const CanMsg c33msg{CanStandardId(msg.id), msg.len, msg.data};
+
+        if (m_rx_once) {
+            if (CAN1.write(c33msg) < 0)
+                Serial.println(msg);
+        }
+    }
+
     void setup() {
 // Portenta C33 FD transceiver pins
 #ifdef ARDUINO_PORTENTA_C33
@@ -49,14 +46,11 @@ struct BotCanClass {
 
     void read() {
         while (CAN1.available()) {
+            m_rx_once          = true;
             const CanMsg rxmsg = CAN1.read();
 
-            can_Message_t odrv_msg = {
-                .id  = rxmsg.id,
-                .len = rxmsg.data_length
-            };
-
-            std::memcpy(odrv_msg.data, rxmsg.data, rxmsg.data_length);
+            can_Message_t odrv_msg{rxmsg.id, rxmsg.data_length, rxmsg.data};
+            // Serial.println(rxmsg);
 
             // pixel.setColor(0, led, led);
             switch (ODriveArduinoCAN::get_node_id(rxmsg.id)) {
@@ -93,6 +87,7 @@ struct BotCanClass {
     ODriveArduinoCAN right_motor;  // Node ID 1
 
     bool m_axis_state_update = false;
+    bool m_rx_once           = false;
 };
 
 extern BotCanClass bot_can;

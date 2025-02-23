@@ -70,7 +70,6 @@ static void periodic_1kHz(void *pvParameters)
 void setup()
 {
     pinMode(PIN_D7, PinMode::OUTPUT);
-
     configControllers();
 
     // Initialize Serial
@@ -89,9 +88,9 @@ void setup()
     controller.begin();
 
     // Create RTOS tasks
-    xTaskCreate(periodic_1kHz, "IMU Task", 256, nullptr, tskIDLE_PRIORITY + 3, &taskHandle_1kHz);
-    xTaskCreate(periodic_100Hz, "CAN Task", 256, nullptr, tskIDLE_PRIORITY + 2, &taskHandle_100Hz);
-    xTaskCreate(periodic_1Hz, "Beep task", 256, nullptr, tskIDLE_PRIORITY + 1, &taskHandle_1Hz);
+    xTaskCreate(periodic_1kHz, "IMU Task", 1024, nullptr, tskIDLE_PRIORITY + 3, &taskHandle_1kHz);
+    xTaskCreate(periodic_100Hz, "CAN Task", 1024, nullptr, tskIDLE_PRIORITY + 2, &taskHandle_100Hz);
+    xTaskCreate(periodic_1Hz, "Beep task", 1024, nullptr, tskIDLE_PRIORITY + 1, &taskHandle_1Hz);
 
     // Start RTOS tasks
     Serial.println("Starting Scheduler");

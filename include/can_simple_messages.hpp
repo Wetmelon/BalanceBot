@@ -187,8 +187,8 @@ struct Get_Encoder_Estimates_msg_t final {
     }
 
     void decode(const can_Message_t& msg) {
-        Pos_Estimate = can_getSignal<float>(msg.data, 0, 32, true, 1.0f, 0.0f);
-        Vel_Estimate = can_getSignal<float>(msg.data, 32, 32, true, 1.0f, 0.0f);
+        Pos_Estimate = can_getSignal<float>(msg.data, 0, 32, true);
+        Vel_Estimate = can_getSignal<float>(msg.data, 32, 32, true);
     }
 
     static constexpr uint8_t cmd_id     = 0x009;
