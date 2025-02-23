@@ -30,10 +30,11 @@ static TaskHandle_t taskHandle_1Hz;
 static void periodic_1Hz(void *pvParameters)
 {
     TickType_t lastWakeTime = xTaskGetTickCount();
+    uint8_t count = 0;
     for (;;)
     {
         vTaskDelayUntil(&lastWakeTime, 1000UL);
-        Serial.println(".");
+        digitalWrite(LEDB, count++ & 0x1);
     }
 }
 
