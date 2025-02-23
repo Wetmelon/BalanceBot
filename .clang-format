@@ -4,5 +4,18 @@ TabWidth: 4
 IndentWidth: 4
 ColumnLimit: 0
 AlignConsecutiveAssignments: Consecutive
-AllowShortCaseLabelsOnASingleLine: true
 AlignConsecutiveDeclarations: Consecutive
+
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseExpressionOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortCompoundRequirementOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: true
+
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false

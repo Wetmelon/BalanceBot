@@ -1,0 +1,93 @@
+#pragma once
+
+#include <Arduino_CAN.h>
+
+#include "ODriveEnums.h"
+#include "can_simple_messages.hpp"
+
+// Helper function for sending can messages
+
+struct BotCanClass {
+    void sendCanMsg(const can_Message_t &msg) {
+        const CanMsg c33msg{CanStandardId(msg.id), msg.len, msg.data};
+
+        if (m_rx_once) {
+            if (CAN1.write(c33msg) < 0)
+                Serial.println(msg);
+        }
+    }
+
+    void setup() {
+// Portenta C33 FD transceiver pins
+#ifdef ARDUINO_PORTENTA_C33
+        pinMode(PIN_CAN1_STBY, OUTPUT);
+        digitalWrite(PIN_CAN1_STBY, LOW);
+#endif
+
+        left_motor.axis_id_  = 0;
+        right_motor.axis_id_ = 1;
+
+        if (!CAN1.begin(CanBitRate::BR_500k)) {
+            Serial.println("CAN Begin Failed!");
+        } else {
+            Serial.println("Connected to CAN at 500kbps");
+        }
+
+        sendCanMsg(left_motor.encode(ODriveArduinoCAN::kClearErrorsMsg));
+        sendCanMsg(right_motor.encode(ODriveArduinoCAN::kClearErrorsMsg));
+    }
+
+    void setAxisStates(ODriveAxisState state) {
+        left_motor.set_axis_state_msg.Axis_Requested_State  = state;
+        right_motor.set_axis_state_msg.Axis_Requested_State = state;
+
+        m_axis_state_update = true;
+    }
+
+    void read() {
+        while (CAN1.available()) {
+            m_rx_once          = true;
+            const CanMsg rxmsg = CAN1.read();
+
+            can_Message_t odrv_msg{rxmsg.id, rxmsg.data_length, rxmsg.data};
+            // Serial.println(rxmsg);
+
+            // pixel.setColor(0, led, led);
+            switch (ODriveArduinoCAN::get_node_id(rxmsg.id)) {
+                case 0: left_motor.decode(odrv_msg); break;
+                case 1: right_motor.decode(odrv_msg); break;
+                default: break;
+            }
+        }
+    }
+
+    void send() {
+        CAN1.clearError();
+
+        // Send the periodic CAN messages
+        sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));
+        sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetInputTorqueMsg));
+
+        if (m_axis_state_update) {
+            sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
+            sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetControllerModeMsg));
+
+            sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
+            sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetLimitsMsg));
+
+            sendCanMsg(left_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
+            sendCanMsg(right_motor.encode(ODriveArduinoCAN::kSetAxisStateMsg));
+
+            m_axis_state_update = false;
+        }
+    }
+
+    // CAN communication objects for the ODrives
+    ODriveArduinoCAN left_motor;   // Node ID 0
+    ODriveArduinoCAN right_motor;  // Node ID 1
+
+    bool m_axis_state_update = false;
+    bool m_rx_once           = false;
+};
+
+extern BotCanClass bot_can;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arduino.h>
+
 #include "bot_can.hpp"
 #include "imu_wrapper.hpp"
 #include "pid.hpp"
@@ -69,13 +71,14 @@ struct BotController {
         Error
     };
 
+    static constexpr std::array StateText = {"Idle", "Active", "Error"};
+
     void begin() {
         vertical_timer.reset();
     }
 
     void step() {
         // Blink orange LED at 1 sec
-        bot::blink(1000);
 
         // Run State Machine
         state = run_state_machine(state);
@@ -91,8 +94,8 @@ struct BotController {
         const float drive_cmd = 0.0f;  // rx.drive * (1.0f - abs(steer_cmd));
 
         // Motor speeds
-        const float vel_right = bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);         // [m/s] right wheel speed
-        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] left wheel speed
+        const float vel_right = +1.0f * bot_can.right_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);  // [m/s] right wheel speed
+        const float vel_left  = -1.0f * bot_can.left_motor.get_encoder_estimates_msg.Vel_Estimate * (settings.kWheelDiameter * bot::kPi);   // [m/s] left wheel speed
 
         // TODO:  Verify yaw rate calculation matches gyro reading
         const float vel_actual = (vel_right + vel_left) / 2.0f + (d2r(imu.pitch_rate) * settings.kComHeight);  // [m/s] Vehicle speed
@@ -112,15 +115,32 @@ struct BotController {
             bot_can.left_motor.set_input_torque_msg.Input_Torque  = 0.0f;
         }
 
-        Serial.print("Pitch: ");
-        Serial.print(imu.pitch);
+        // Serial.print("Pitch: ");
+        // Serial.println(imu.pitch);
 
-        Serial.print("\tVel: ");
-        Serial.println(vel_actual);
+        // Serial.print("\tL: ");
+        // Serial.print(vel_left);
+        // Serial.print("\tR: ");
+        // Serial.print(vel_right);
+        // Serial.println();
     }
 
     State run_state_machine(State state) {
         State next_state = state;
+
+        const bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
+        const bool right_error = bot_can.right_motor.heartbeat_msg.Axis_Error != 0;
+
+        digitalWrite(PIN_D7, left_error || right_error);
+        if (left_error) {
+            Serial.print("Left Error: ");
+            Serial.println(bot_can.left_motor.heartbeat_msg.Axis_Error, HEX);
+        }
+
+        if (right_error) {
+            Serial.print("Right Error: ");
+            Serial.println(bot_can.right_motor.heartbeat_msg.Axis_Error, HEX);
+        }
 
         switch (state) {
             case State::Idle: {
@@ -138,31 +158,38 @@ struct BotController {
 
             case State::Active: {
                 // Check for errors
-                bool pitch_over  = fabsf(imu.pitch) > 30.0f;
-                bool imu_timeout = imu.getIsTimedOut();
-
-                bool left_error  = bot_can.left_motor.heartbeat_msg.Axis_Error != 0;
-                bool right_error = bot_can.right_motor.heartbeat_msg.Axis_Error != 0;
+                const bool pitch_over  = fabsf(imu.pitch) > 30.0f;
+                const bool imu_timeout = imu.getIsTimedOut();
 
                 if (pitch_over || left_error || right_error) {
                     vertical_timer.reset();
 
                     bot_can.setAxisStates(AXIS_STATE_IDLE);
                     next_state = State::Idle;
+
+                    if (pitch_over) {
+                        Serial.println("Pitch Over");
+                    }
                 }
 
                 if (imu_timeout) {
                     bot_can.setAxisStates(AXIS_STATE_IDLE);
                     next_state = State::Error;
+                    Serial.println("IMU Timeout");
                 }
 
             } break;
 
             case State::Error:
+                Serial.println("Error State!");
             default: {
                 bot_can.setAxisStates(AXIS_STATE_IDLE);
+                Serial.println("Invalid State!");
             } break;
         }
+
+        if (state != next_state)
+            Serial.println(StateText[static_cast<int>(next_state)]);
 
         return next_state;
     }
