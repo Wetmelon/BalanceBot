@@ -76,7 +76,6 @@ struct BotController {
 
     void step() {
         // Blink orange LED at 1 sec
-        bot::blink(1000);
 
         // Run State Machine
         state = run_state_machine(state);

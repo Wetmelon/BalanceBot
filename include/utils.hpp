@@ -11,19 +11,6 @@ constexpr const T& clamp(const T& x, const T& lo, const T& hi) {
     return std::min(std::max(x, lo), hi);
 }
 
-void blink(const uint32_t blink_period_ms) {
-    static uint32_t last_blink = millis();
-    static bool     led_state  = false;
-
-    const uint32_t now = millis();
-    if ((now - last_blink) >= (blink_period_ms / 2UL)) {
-        last_blink = now;
-        led_state  = !led_state;
-
-        digitalWrite(LED_BUILTIN, led_state ? HIGH : LOW);
-    }
-}
-
 struct LPF {
     LPF(float Ts, float Tau) : _alpha(Ts / (Ts + Tau)) {}
 
