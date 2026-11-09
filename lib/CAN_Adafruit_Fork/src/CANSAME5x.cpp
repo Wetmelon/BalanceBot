@@ -30,9 +30,11 @@ namespace {
 
 #define GCLK_CAN1 GCLK_PCHCTRL_GEN_GCLK1_Val
 #define GCLK_CAN0 GCLK_PCHCTRL_GEN_GCLK1_Val
-#define ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE (1)
+// BalanceBot patch: the M_CAN's maximum TX FIFO (32) and RX FIFO 0 (64) depths, from 1 and 8.
+// 64 eight-byte frames is 16 ms of a saturated 500 kbps bus, 32 is 8 ms; 3 kB of .canram.
+#define ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE (32)
 #define ADAFRUIT_ZEROCAN_RX_FILTER_SIZE (1)
-#define ADAFRUIT_ZEROCAN_RX_FIFO_SIZE (8)
+#define ADAFRUIT_ZEROCAN_RX_FIFO_SIZE (64)
 #define ADAFRUIT_ZEROCAN_MAX_MESSAGE_LENGTH (8)
 
 namespace {
@@ -244,7 +246,8 @@ int CANSAME5x::begin(long baudrate) {
   {
     CAN_TXBC_Type bc = {};
     bc.bit.TBSA = (uint32_t)state->tx_buffer;
-    bc.bit.NDTB = ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE;
+    // BalanceBot patch: all of it a TX FIFO, instead of one dedicated buffer.
+    bc.bit.TFQS = ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE;
     bc.bit.TFQM = 0; // Messages are transmitted in the order submitted
     hw->TXBC.reg = bc.reg;
   }
@@ -347,9 +350,14 @@ int CANSAME5x::endPacket() {
 
   bus_autorecover();
 
-  // TODO wait for TX buffer to free
+  // BalanceBot patch: queue into the TX FIFO and return, 0 when it is full. The stock code
+  // rewrote buffer 0, pending or not, then spun up to 8000 polls for it to go out.
+  if (hw->TXFQS.bit.TFQF) {
+    return 0;
+  }
+  const uint32_t index = hw->TXFQS.bit.TFQPI;
 
-  _canSAME5x_tx_buf &buf = state->tx_buffer[0];
+  _canSAME5x_tx_buf &buf = state->tx_buffer[index];
   buf.txb0.bit.ESI = false;
   buf.txb0.bit.XTD = _txExtended;
   buf.txb0.bit.RTR = _txRtr;
@@ -369,15 +377,8 @@ int CANSAME5x::endPacket() {
   }
 
   // TX buffer add request
-  hw->TXBAR.reg = 1;
-
-  // wait 8ms (hard coded for now) for TX to occur
-  for (int i = 0; i < 8000; i++) {
-    if (hw->TXBTO.reg & 1) {
-      return true;
-    }
-    yield();
-  }
+  __DMB(); // the element is in RAM before the M_CAN is told to read it
+  hw->TXBAR.reg = 1UL << index;
 
   return 1;
 }
