@@ -2,9 +2,9 @@
 
 // CAN at 500 kbps to two ODrives in torque mode.
 //   Portenta C33: CAN1 through the Hat Carrier's transceiver. <Arduino_CAN.h> is the patched copy in
-//                 lib/Arduino_CAN: RX from the 16-deep FIFO, all 16 TX buffers.
-//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051, Adafruit's CAN fork, stock: an
-//                 8-deep RX FIFO, and one TX buffer that each write busy-waits on until it is sent.
+//                 lib/Arduino_CAN: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
+//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051. <CAN.h> is the patched copy in
+//                 lib/CAN_Adafruit_Fork: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
 #if defined(ARDUINO_PORTENTA_C33)
 #include <Arduino_CAN.h>
 #else
@@ -155,7 +155,6 @@ struct BotCanClass {
         return true;
     }
 
-    // The driver reports nothing: endPacket() is 1 whether or not the frame went out.
     static bool canWrite(const can_Message_t& msg) {
         CAN.beginPacket(static_cast<int>(msg.id), msg.len);
         CAN.write(msg.data, msg.len);

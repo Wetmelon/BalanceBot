@@ -22,6 +22,7 @@ git clone --recurse-submodules=external/damp git@github.com:Wetmelon/BalanceBot.
 pio run                              # both boards and the SIL
 pio run -e sil -t exec               # host SIL: exits 0 when every check holds
 pio run -e feather_m4_can -t upload  # flash one board (or portenta_c33)
+pio test -e feather_m4_can           # the CAN driver's FIFOs in loopback, on a board with no bus (or portenta_c33)
 pio device monitor                   # telemetry at 10 Hz: mode, pitch [rad], x [m], wheel torques [N·m], ODrive health
 pio run -e portenta_c33 -t compiledb # compile_commands.json for clangd (one board at a time)
 ```
@@ -44,17 +45,26 @@ Neither core's GCC has C++20; `platformio.ini` swaps in GCC 12.3 for both. The A
 
 ## CAN on the C33
 
-`lib/Arduino_CAN` is the core's library (Renesas Portenta core 1.6.0) with three changes, each marked `BalanceBot patch` in the source. PlatformIO takes a library in `lib/` over the core's copy of the same name.
+`lib/Arduino_CAN` is the core's library from the Renesas Portenta core 1.6.0, the latest release (`renesas-ra@1.9.0`, pinned in `platformio.ini`); the core's `main` has nothing newer for it. The core compiles in Arduino's fork of FSP 4.0, which has no transmit FIFO support and a broken error handler, so the patches work on the CANFD registers where FSP falls short. Each is marked `BalanceBot patch` in [R7FA6M5_CAN.cpp](lib/Arduino_CAN/src/R7FA6M5_CAN.cpp). PlatformIO takes a library in `lib/` over the core's copy of the same name.
 
-- **RX:** `available()` drains the channel's 16-frame receive FIFO. The stock driver read one frame per call from a single receive buffer, which the next frame overwrites, so two ODrive frames arriving between polls lost one.
-- **TX:** `write()` takes whichever of the 16 transmit buffers is free. The stock driver always used buffer 0, so a frame written while the previous one was still on the bus was refused.
-- **Filters:** CAN0's standard-ID rule no longer delivers into CAN1's buffers ([arduino/ArduinoCore-renesas#513](https://github.com/arduino/ArduinoCore-renesas/issues/513)).
+- **RX:** `available()` drains the channel's receive FIFO, 64 frames deep (the core sets 16), into the library's 32-frame ring. The stock driver read one frame per call from a single receive buffer, which the next frame overwrites.
+- **TX:** `write()` puts the frame in a 32-frame transmit FIFO (common FIFO 0 of the channel, set up in `begin()`), sent in the order written, and returns at once, or returns `-FSP_ERR_CAN_TRANSMIT_NOT_READY` when the FIFO is full. The stock driver wrote transmit buffer 0, and FSP 4.0 lets a write overwrite a buffer whose frame has not gone out yet: its check only refuses a buffer while it is on the bus.
+- **Error interrupts:** on again (warning, passive, bus-off, recovery, overload), with a handler of our own on the channel's error vector. The FSP fork handled that interrupt as a global error and never cleared the channel's flags, so it fired again on return, forever ([arduino/ArduinoCore-renesas#532](https://github.com/arduino/ArduinoCore-renesas/issues/532)); the core's answer was to turn them off. `isError()` now reports the latched `canfd_error_t` flags until `clearError()`. Bus-off recovers on its own, per ISO 11898-1.
+- **Filters:** CAN0's standard-ID rule no longer delivers into CAN1's buffers ([#513](https://github.com/arduino/ArduinoCore-renesas/issues/513)).
+- **Loopback:** `enableInternalLoopback()` loops back internally and leaves the channel running; the stock call asked for the external loopback and left the channel halted.
 
-Channel error interrupts stay off, as the core ships them: with them on, a bus error re-enters the interrupt forever ([#532](https://github.com/arduino/ArduinoCore-renesas/issues/532)). The heartbeat timeout is what notices a drive dropping off.
+Buffer RAM: two 64-frame RX FIFOs and two 32-frame TX FIFOs take 3880 of the RA6M5's 4864 bytes.
 
 ## CAN on the Feather M4 CAN
 
-Adafruit's CAN fork (1.2.1), unpatched. It polls an 8-frame receive FIFO, which holds a 10 ms tick's ODrive traffic with room to spare. Transmit is one buffer: each write waits, spinning, until its frame is on the bus (about 0.25 ms at 500 kbps, longer if it loses arbitration), and gives up after 8000 polls (8 ms by the source's comment, nearer 1 ms at 120 MHz); the next write then overwrites a frame that may still be pending. The control task pays that wait twice per tick, six times on a mode change. `endPacket()` reports success either way, so a refused frame is never printed here.
+`lib/CAN_Adafruit_Fork` is Adafruit's CAN fork (1.2.1, the latest) with two changes, each marked `BalanceBot patch` in [CANSAME5x.cpp](lib/CAN_Adafruit_Fork/src/CANSAME5x.cpp). It takes over from the registry copy, which is no longer a dependency.
+
+- **RX:** the receive FIFO is 64 frames, the M_CAN's maximum, up from 8: 16 ms of a saturated bus, against a 10 ms poll.
+- **TX:** `endPacket()` puts the frame in a 32-frame transmit FIFO, sent in the order written, and returns at once, or returns 0 when the FIFO is full. The stock driver had one transmit buffer, which every write overwrote whether or not its last frame had gone out, and then spun up to 8000 polls waiting for it.
+
+## Loopback test
+
+`pio test -e portenta_c33` or `pio test -e feather_m4_can` runs [test/test_can_loopback](test/test_can_loopback/test_main.cpp) on the board in its controller's loopback mode, with no bus: a burst of writes stops at the full 32-frame TX FIFO without blocking, and 64 frames come back in order. The stock drivers fail it.
 
 ## Files
 
@@ -69,4 +79,6 @@ Adafruit's CAN fork (1.2.1), unpatched. It polls an 8-frame receive FIFO, which 
 | [docs/derivation.md](docs/derivation.md) | equations of motion, measurement map, design |
 | [include/damp_profile.hpp](include/damp_profile.hpp) | Damp backend: ETL, Damp math |
 | `lib/Arduino_CAN/` | the C33 core's CAN library, patched (above) |
+| `lib/CAN_Adafruit_Fork/` | Adafruit's CAN library for the Feather, patched (above) |
+| [test/test_can_loopback/](test/test_can_loopback/test_main.cpp) | each board's CAN FIFOs, on the board |
 | `lib/BNO080/` | SparkFun BNO080 library, vendored |

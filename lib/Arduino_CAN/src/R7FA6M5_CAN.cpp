@@ -25,6 +25,13 @@
  **************************************************************************************/
 
 extern "C" void canfd_callback(can_callback_args_t * p_args);
+extern "C" void canfd_channel_error_isr(void);
+
+/* BalanceBot patch: per channel, a 64-frame RX FIFO (the core configures 16) and a 32-frame TX FIFO
+ * (the core has none): 3880 of the RA6M5's 4864 bytes of CANFD buffer RAM, at 20 bytes a frame. */
+static uint32_t constexpr RX_FIFO_DEPTH_CODE = 6; /* CFDRFCC.RFDC: 64 frames */
+static uint32_t constexpr TX_FIFO_DEPTH_CODE = 4; /* CFDCFCC.CFDC: 32 frames */
+static uint32_t constexpr COMMON_FIFOS_PER_CHANNEL = 3;
 
 /**************************************************************************************
  * NAMESPACE
@@ -54,15 +61,16 @@ R7FA6M5_CAN::R7FA6M5_CAN(int const can_tx_pin, int const can_rx_pin)
   .global_config     = (CANFD_CFG_TX_PRIORITY | CANFD_CFG_DLC_CHECK | (BSP_CFG_CANFDCLK_SOURCE == BSP_CLOCKS_SOURCE_CLOCK_MAIN_OSC ? R_CANFD_CFDGCFG_DCS_Msk : 0U) | CANFD_CFG_FD_OVERFLOW),
   .rx_fifo_config    =
   {
-    ((CANFD_CFG_RXFIFO0_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO0_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO0_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO0_INT_MODE) | (CANFD_CFG_RXFIFO0_ENABLE)),
-    ((CANFD_CFG_RXFIFO1_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO1_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO1_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO1_INT_MODE) | (CANFD_CFG_RXFIFO1_ENABLE)),
+    ((CANFD_CFG_RXFIFO0_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (RX_FIFO_DEPTH_CODE << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO0_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO0_INT_MODE) | (CANFD_CFG_RXFIFO0_ENABLE)),
+    ((CANFD_CFG_RXFIFO1_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (RX_FIFO_DEPTH_CODE << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO1_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO1_INT_MODE) | (CANFD_CFG_RXFIFO1_ENABLE)),
 #if !BSP_FEATURE_CANFD_LITE
-    ((CANFD_CFG_RXFIFO2_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO2_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO2_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO2_INT_MODE) | (CANFD_CFG_RXFIFO2_ENABLE)),
-    ((CANFD_CFG_RXFIFO3_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO3_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO3_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO3_INT_MODE) | (CANFD_CFG_RXFIFO3_ENABLE)),
-    ((CANFD_CFG_RXFIFO4_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO4_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO4_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO4_INT_MODE) | (CANFD_CFG_RXFIFO4_ENABLE)),
-    ((CANFD_CFG_RXFIFO5_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO5_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO5_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO5_INT_MODE) | (CANFD_CFG_RXFIFO5_ENABLE)),
-    ((CANFD_CFG_RXFIFO6_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO6_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO6_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO6_INT_MODE) | (CANFD_CFG_RXFIFO6_ENABLE)),
-    ((CANFD_CFG_RXFIFO7_INT_THRESHOLD << R_CANFD_CFDRFCC_RFIGCV_Pos) | (CANFD_CFG_RXFIFO7_DEPTH << R_CANFD_CFDRFCC_RFDC_Pos) | (CANFD_CFG_RXFIFO7_PAYLOAD << R_CANFD_CFDRFCC_RFPLS_Pos) | (CANFD_CFG_RXFIFO7_INT_MODE) | (CANFD_CFG_RXFIFO7_ENABLE)),
+    /* BalanceBot patch: FIFOs 2-7 are unused; depth 0 keeps them out of the buffer RAM. */
+    0U,
+    0U,
+    0U,
+    0U,
+    0U,
+    0U,
 #endif
   },
   .rx_mb_config      = (CANFD_CFG_RXMB_NUMBER | (CANFD_CFG_RXMB_SIZE << R_CANFD_CFDRMNB_RMPLS_Pos)),
@@ -73,8 +81,9 @@ R7FA6M5_CAN::R7FA6M5_CAN(int const can_tx_pin, int const can_rx_pin)
 {
   .p_afl              = nullptr,
   //.txmb_txi_enable    = ((1ULL << 9) | (1ULL << 0) | 0ULL),
-  .txmb_txi_enable    = 0xFFFFFFFFFFFFFFFF,
-  .error_interrupts   = 0U,
+  .txmb_txi_enable    = 0U, /* BalanceBot patch: TX goes through the TX FIFO; no TX buffer is written */
+  /* BalanceBot patch: the core's error interrupts back on (it turned them off for #532, fixed below). */
+  .error_interrupts   = (R_CANFD_CFDC_CTR_EWIE_Msk | R_CANFD_CFDC_CTR_EPIE_Msk | R_CANFD_CFDC_CTR_BOEIE_Msk | R_CANFD_CFDC_CTR_BORIE_Msk | R_CANFD_CFDC_CTR_OLIE_Msk | 0U),
   .p_data_timing      = nullptr,
   .delay_compensation = (1),
   .p_global_cfg       = &_canfd_global_cfg,
@@ -132,6 +141,17 @@ bool R7FA6M5_CAN::begin(uint32_t const can_bitrate)
   };
   init_ok &= IRQManager::getInstance().addPeripheral(IRQ_CANFD, &irq_req);
 
+  /* BalanceBot patch (arduino/ArduinoCore-renesas#532): our handler on this channel's error vector,
+   * in place of the FSP fork's canfd_error_isr. The vector is the channel's error interrupt, but the
+   * fork's handler takes everything on it for a global error: it clears CFDGERFL, leaves the
+   * channel's error flags set, and the interrupt fires again on return, forever. 16 system
+   * exceptions precede the IRQs in the vector table. */
+  if (_canfd_cfg.error_irq >= 0)
+  {
+    ((volatile uint32_t *) SCB->VTOR)[16 + _canfd_cfg.error_irq] = (uint32_t) canfd_channel_error_isr;
+    __DSB();
+  }
+
   /* There is only one global error channel shared between both CAN0 and CAN1
    * peripheral. If you are using e2Studio the error channel is configured via
    * a project-wide define, however this is an issue for as as we do not know
@@ -169,6 +189,20 @@ bool R7FA6M5_CAN::begin(uint32_t const can_bitrate)
   if (R_CANFD_Open(&_canfd_ctrl, &_canfd_cfg) != FSP_SUCCESS)
     init_ok = false;
 
+  /* BalanceBot patch: common FIFO 0 of each channel becomes its TX FIFO, linked to TX buffer 0, the
+   * first time any channel opens. FSP 4.0 cannot configure common FIFOs, and their configuration
+   * takes global reset, so this leaves global operation and comes back. write() sets the FIFO
+   * enable (CFE). */
+  if (init_ok && (R_CANFD->CFDCFCC[0] & R_CANFD_CFDCFCC_CFM_Msk) == 0U)
+  {
+    uint32_t const tx_fifo = (1U << R_CANFD_CFDCFCC_CFM_Pos) | (TX_FIFO_DEPTH_CODE << R_CANFD_CFDCFCC_CFDC_Pos);
+    init_ok &= R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_GLOBAL_RESET, CAN_TEST_MODE_DISABLED) == FSP_SUCCESS;
+    for (uint32_t ch = 0; ch < BSP_FEATURE_CANFD_NUM_CHANNELS; ch++)
+      R_CANFD->CFDCFCC[ch * COMMON_FIFOS_PER_CHANNEL] = tx_fifo;
+    init_ok &= R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_GLOBAL_OPERATION, CAN_TEST_MODE_DISABLED) == FSP_SUCCESS;
+    init_ok &= R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_NORMAL, CAN_TEST_MODE_DISABLED) == FSP_SUCCESS;
+  }
+
   return init_ok;
 }
 
@@ -177,9 +211,12 @@ void R7FA6M5_CAN::end()
   R_CANFD_Close(&_canfd_ctrl);
 }
 
+/* BalanceBot patch: both loopback calls end in channel operation. The stock ones asked for global
+ * operation, which left the channel in the halt mode a test mode change passes through, and
+ * enableInternalLoopback() asked for the external loopback, which drives the TX pin. */
 int R7FA6M5_CAN::enableInternalLoopback()
 {
-  if(fsp_err_t const rc = R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_GLOBAL_OPERATION, CAN_TEST_MODE_LOOPBACK_EXTERNAL); rc != FSP_SUCCESS)
+  if(fsp_err_t const rc = R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_NORMAL, CAN_TEST_MODE_LOOPBACK_INTERNAL); rc != FSP_SUCCESS)
     return -rc;
 
   return 1;
@@ -187,7 +224,7 @@ int R7FA6M5_CAN::enableInternalLoopback()
 
 int R7FA6M5_CAN::disableInternalLoopback()
 {
-  if(fsp_err_t const rc = R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_GLOBAL_OPERATION, CAN_TEST_MODE_DISABLED); rc != FSP_SUCCESS)
+  if(fsp_err_t const rc = R_CANFD_ModeTransition(&_canfd_ctrl, CAN_OPERATION_MODE_NORMAL, CAN_TEST_MODE_DISABLED); rc != FSP_SUCCESS)
     return -rc;
 
   return 1;
@@ -207,25 +244,29 @@ int R7FA6M5_CAN::write(CanMsg const & msg)
 
   memcpy(can_msg.data, msg.data, can_msg.data_length_code);
 
-  /* BalanceBot patch: take whichever of the 16 TX buffers is free (FSP refuses a busy one),
-   * instead of always buffer 0, which drops a frame written while the last is on the bus. */
-  static uint32_t constexpr TX_BUFFERS[] = {0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34, 35, 36, 37, 38, 39};
-  fsp_err_t rc = FSP_ERR_CAN_TRANSMIT_NOT_READY;
-  for (uint32_t const buffer : TX_BUFFERS)
-  {
-    rc = R_CANFD_Write(&_canfd_ctrl, buffer, &can_msg);
-    if (rc != FSP_ERR_CAN_TRANSMIT_NOT_READY)
-      break;
-  }
-  if (rc != FSP_SUCCESS)
-    return -rc;
+  /* BalanceBot patch: queue into this channel's TX FIFO (begin() sets it up), sent in the order
+   * written; -FSP_ERR_CAN_TRANSMIT_NOT_READY when it is full. The stock code wrote TX buffer 0
+   * through R_CANFD_Write, whose ready check in FSP 4.0 (TMTSTS: not on the bus at this moment)
+   * passes a buffer whose frame is still waiting, and overwrites it. */
+  uint32_t const fifo = _canfd_cfg.channel * COMMON_FIFOS_PER_CHANNEL;
+  if (!(R_CANFD->CFDCFCC[fifo] & R_CANFD_CFDCFCC_CFE_Msk))
+    R_CANFD->CFDCFCC[fifo] |= R_CANFD_CFDCFCC_CFE_Msk; /* first write, or after a channel reset or halt, which disable it */
+  if (!(R_CANFD->CFDCFCC[fifo] & R_CANFD_CFDCFCC_CFE_Msk) || (R_CANFD->CFDCFSTS[fifo] & R_CANFD_CFDCFSTS_CFFLL_Msk))
+    return -FSP_ERR_CAN_TRANSMIT_NOT_READY;
+
+  R_CANFD->CFDCF[fifo].ID    = can_msg.id | ((uint32_t) can_msg.id_mode << R_CANFD_CFDCF_ID_CFIDE_Pos);
+  R_CANFD->CFDCF[fifo].PTR   = (uint32_t) can_msg.data_length_code << R_CANFD_CFDCF_PTR_CFDLC_Pos;
+  R_CANFD->CFDCF[fifo].FDSTS = 0U; /* classic CAN */
+  for (uint32_t i = 0; i < can_msg.data_length_code; i++)
+    R_CANFD->CFDCF[fifo].DF[i] = can_msg.data[i];
+  R_CANFD->CFDCFPCTR[fifo] = R_CANFD_CFDCFPCTR_CFPC_Msk; /* commit: the FIFO takes the frame */
 
   return 1;
 }
 
 size_t R7FA6M5_CAN::available()
 {
-  /* BalanceBot patch: drain this channel's RX FIFO (16 frames deep) into the ring buffer and
+  /* BalanceBot patch: drain this channel's RX FIFO (64 frames deep) into the ring buffer and
    * return how many frames read() has. The stock code took one frame per call from a single RX
    * message buffer, which the next frame overwrites, and returned that buffer's status bits. */
   uint32_t const fifo = (_canfd_cfg.channel == 0) ? CANFD_RX_BUFFER_FIFO_0 : CANFD_RX_BUFFER_FIFO_1;
@@ -267,13 +308,19 @@ void R7FA6M5_CAN::onCanFDCallback(can_callback_args_t * p_args)
       _can_rx_buf.enqueue(msg);
     }
     break;
+    case CAN_EVENT_ERR_CHANNEL:          /* Channel error has occurred. */
+    {
+      /* BalanceBot patch: latch the canfd_error_t flags (warning, passive, bus-off, ...) until clearError(). */
+      _is_error = true;
+      _err_code |= p_args->error;
+    }
+    break;
     case CAN_EVENT_ERR_WARNING:          /* error warning event */
     case CAN_EVENT_ERR_PASSIVE:          /* error passive event */
     case CAN_EVENT_ERR_BUS_OFF:          /* error bus off event */
     case CAN_EVENT_BUS_RECOVERY:         /* Bus recovery error event */
     case CAN_EVENT_MAILBOX_MESSAGE_LOST: /* overwrite/overrun error event */
     case CAN_EVENT_ERR_BUS_LOCK:         /* Bus lock detected (32 consecutive dominant bits). */
-    case CAN_EVENT_ERR_CHANNEL:          /* Channel error has occurred. */
     case CAN_EVENT_TX_ABORTED:           /* Transmit abort event. */
     case CAN_EVENT_ERR_GLOBAL:           /* Global error has occurred. */
     case CAN_EVENT_TX_FIFO_EMPTY:        /* Transmit FIFO is empty. */
@@ -336,6 +383,34 @@ extern "C" void canfd_callback(can_callback_args_t * p_args)
 {
   R7FA6M5_CAN * this_ptr = (R7FA6M5_CAN *)(p_args->p_context);
   this_ptr->onCanFDCallback(p_args);
+}
+
+/* BalanceBot patch: the channel error handler begin() installs (#532). It reads and clears the
+ * channel's error flags and reports them as CAN_EVENT_ERR_CHANNEL. The interrupt status is cleared
+ * first, so a flag raised after the read interrupts again. */
+extern "C" void canfd_channel_error_isr(void)
+{
+  FSP_CONTEXT_SAVE
+
+  IRQn_Type const irq = R_FSP_CurrentIrqGet();
+  R_BSP_IrqStatusClear(irq);
+
+  canfd_instance_ctrl_t * const p_ctrl = (canfd_instance_ctrl_t *) R_FSP_IsrContextGet(irq);
+  uint32_t const channel = p_ctrl->p_cfg->channel;
+  uint32_t const error = R_CANFD->CFDC[channel].ERFL & UINT16_MAX; /* the upper half is the last CRC */
+  R_CANFD->CFDC[channel].ERFL = ~error; /* the flags clear on 0; only those read */
+
+  if (error != 0U)
+  {
+    can_callback_args_t args = {};
+    args.channel   = channel;
+    args.event     = CAN_EVENT_ERR_CHANNEL;
+    args.error     = error;
+    args.p_context = p_ctrl->p_context;
+    p_ctrl->p_callback(&args);
+  }
+
+  FSP_CONTEXT_RESTORE
 }
 
 #endif /* ARDUINO_PORTENTA_C33 */
