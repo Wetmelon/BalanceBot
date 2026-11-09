@@ -1,8 +1,15 @@
 #pragma once
 
-// Portenta C33 CAN1 through the Hat Carrier's transceiver, 500 kbps, to two ODrives in torque mode.
-// <Arduino_CAN.h> is the patched copy in lib/Arduino_CAN: RX from the 16-deep FIFO, all 16 TX buffers.
+// CAN at 500 kbps to two ODrives in torque mode.
+//   Portenta C33: CAN1 through the Hat Carrier's transceiver. <Arduino_CAN.h> is the patched copy in
+//                 lib/Arduino_CAN: RX from the 16-deep FIFO, all 16 TX buffers.
+//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051, Adafruit's CAN fork, stock: an
+//                 8-deep RX FIFO, and one TX buffer that each write busy-waits on until it is sent.
+#if defined(ARDUINO_PORTENTA_C33)
 #include <Arduino_CAN.h>
+#else
+#include <CAN.h>
+#endif
 
 #include "ODriveEnums.h"
 #include "can_helpers.hpp"
@@ -14,9 +21,6 @@ struct BotCanClass {
     static constexpr uint32_t kHeartbeatTimeoutMs = 250;
 
     void setup() {
-        pinMode(PIN_CAN1_STBY, OUTPUT);
-        digitalWrite(PIN_CAN1_STBY, LOW);  // transceiver out of standby
-
         for (ODriveArduinoCAN* m : {&left_motor, &right_motor}) {
             m->set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
             m->set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
@@ -29,7 +33,7 @@ struct BotCanClass {
             hb->tick(kHeartbeatTimeoutMs);  // unheard until the first heartbeat
         }
 
-        if (!CAN1.begin(CanBitRate::BR_500k)) {
+        if (!canBegin()) {
             Serial.println("CAN Begin Failed!");
         } else {
             Serial.println("Connected to CAN at 500kbps");
@@ -50,11 +54,10 @@ struct BotCanClass {
     void read(uint32_t dt_ms) {
         left_heartbeat_.tick(dt_ms);
         right_heartbeat_.tick(dt_ms);
-        while (CAN1.available() > 0) {
-            const CanMsg        rx = CAN1.read();
-            const can_Message_t msg{rx.id, rx.data_length, rx.data};
-            const bool          heartbeat = ODriveArduinoCAN::get_cmd_id(rx.id) == ODriveArduinoCAN::kHeartbeatMsg;
-            switch (ODriveArduinoCAN::get_node_id(rx.id)) {
+        can_Message_t msg;
+        while (canRead(msg)) {
+            const bool heartbeat = ODriveArduinoCAN::get_cmd_id(msg.id) == ODriveArduinoCAN::kHeartbeatMsg;
+            switch (ODriveArduinoCAN::get_node_id(msg.id)) {
                 case 0: receive(left_motor, left_heartbeat_, msg, heartbeat); break;
                 case 1: receive(right_motor, right_heartbeat_, msg, heartbeat); break;
                 default: break;
@@ -104,10 +107,61 @@ struct BotCanClass {
             return;
         }
         const can_Message_t msg = m.encode(cmd);
-        if (CAN1.write(CanMsg{CanStandardId(msg.id), msg.len, msg.data}) < 0) {
+        if (!canWrite(msg)) {
             Serial.println(msg);
         }
     }
+
+#if defined(ARDUINO_PORTENTA_C33)
+    static bool canBegin() {
+        pinMode(PIN_CAN1_STBY, OUTPUT);
+        digitalWrite(PIN_CAN1_STBY, LOW);  // transceiver out of standby
+        return CAN1.begin(CanBitRate::BR_500k);
+    }
+
+    static bool canRead(can_Message_t& msg) {
+        if (CAN1.available() == 0) {
+            return false;
+        }
+        const CanMsg rx = CAN1.read();
+        msg             = {rx.id, rx.data_length, rx.data};
+        return true;
+    }
+
+    static bool canWrite(const can_Message_t& msg) { return CAN1.write(CanMsg{CanStandardId(msg.id), msg.len, msg.data}) >= 0; }
+#else
+    static bool canBegin() {
+        pinMode(PIN_CAN_STANDBY, OUTPUT);
+        digitalWrite(PIN_CAN_STANDBY, LOW);  // transceiver out of standby
+        pinMode(PIN_CAN_BOOSTEN, OUTPUT);
+        digitalWrite(PIN_CAN_BOOSTEN, HIGH);  // the transceiver's 5 V, also on battery
+        if (CAN.begin(500000) == 0) {
+            return false;
+        }
+        CAN.filter(0, 0);  // every standard ID, no extended: an extended ID would alias a node
+        return true;
+    }
+
+    // ponytail: parsePacket() returns the DLC, so a zero-length frame ends this tick's drain early;
+    // the rest wait in the FIFO for the next tick. ODrive sends none.
+    static bool canRead(can_Message_t& msg) {
+        if (CAN.parsePacket() <= 0) {
+            return false;
+        }
+        msg     = {};
+        msg.id  = static_cast<uint32_t>(CAN.packetId());
+        msg.len = static_cast<uint8_t>(CAN.available());
+        CAN.readBytes(msg.data, msg.len);  // only what arrived: readBytes would wait 1 s for more
+        return true;
+    }
+
+    // The driver reports nothing: endPacket() is 1 whether or not the frame went out.
+    static bool canWrite(const can_Message_t& msg) {
+        CAN.beginPacket(static_cast<int>(msg.id), msg.len);
+        CAN.write(msg.data, msg.len);
+        return CAN.endPacket() != 0;
+    }
+#endif
 
     damp::Timeout<uint32_t> left_heartbeat_{kHeartbeatTimeoutMs};
     damp::Timeout<uint32_t> right_heartbeat_{kHeartbeatTimeoutMs};

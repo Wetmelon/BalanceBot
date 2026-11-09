@@ -1,4 +1,4 @@
-// BalanceBot firmware: Arduino Portenta C33 on a Portenta Hat Carrier, two ODrives on CAN1, BNO080 on Wire2.
+// BalanceBot firmware: two ODrives on CAN, BNO080 on I²C. Portenta C33 or Feather M4 CAN: see board.hpp.
 //
 // Three tasks. The control task runs at 100 Hz: CAN in → bot::Controller::tick → CAN out, back to
 // back so the torque goes out on fresh data. The IMU task polls the BNO080 at 1 kHz. Telemetry
@@ -9,17 +9,13 @@
 #include "balance_controller.hpp"
 #include "damp/toolbox/timing.hpp"
 
-#include <Arduino.h>
-#include <Arduino_FreeRTOS.h>
-
+#include "board.hpp"
 #include "bot_can.hpp"
 #include "imu.hpp"
-#include "portenta_rgb.hpp"
 // clang-format on
 
 BotCanClass bot_can;
 ImuWrapper  imu;
-RgbC33      pixel;
 
 static constinit bot::Controller controller;
 static bot::Measurement          last_measurement;  // telemetry copies; a torn read only misprints
@@ -63,10 +59,10 @@ static void controlTask(void*) {
         }
         bot_can.sendTorques(-out.torque.left, +out.torque.right);
 
-        digitalWrite(PIN_D7, bot_can.axisErrors() != 0 ? HIGH : LOW);
+        digitalWrite(board::kFaultPin, bot_can.axisErrors() != 0 ? HIGH : LOW);
         if (blink(kPeriodMs)) {
             led = !led;
-            digitalWrite(LEDB, led ? LOW : HIGH);  // active low
+            board::blink(led);
         }
         last_measurement = m;
         last_output      = out;
@@ -74,7 +70,7 @@ static void controlTask(void*) {
 }
 
 static void imuTask(void*) {
-    imu.begin(Wire2);
+    imu.begin(board::imu_wire);
     TickType_t wake = xTaskGetTickCount();
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1));
@@ -108,8 +104,8 @@ void setup() {
     while ((millis() - start < 1000) && !Serial) {
         delay(1);
     }
-    pinMode(PIN_D7, OUTPUT);  // high on an ODrive axis error
-    pixel.setup();
+    pinMode(board::kFaultPin, OUTPUT);
+    board::setupLeds();
 
     xTaskCreate(controlTask, "control", 1024, nullptr, tskIDLE_PRIORITY + 3, nullptr);
     xTaskCreate(imuTask, "imu", 1024, nullptr, tskIDLE_PRIORITY + 2, nullptr);

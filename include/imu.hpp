@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Arduino_FreeRTOS.h>
-#include <Wire.h>
-
 #include "SparkFun_BNO080_Arduino_Library.h"
 #include "balance_controller.hpp"
+#include "board.hpp"
 #include "damp/toolbox/timing.hpp"
 
 /// BNO080 on I²C: game rotation vector (gyro + accel, no magnetometer) and raw gyro at 100 Hz.
