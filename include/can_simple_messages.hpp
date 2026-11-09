@@ -90,13 +90,13 @@ struct Heartbeat_msg_t final {
 struct Estop_msg_t final {
     Estop_msg_t() = default;
 
-    Estop_msg_t(const can_Message_t& msg) {
+    Estop_msg_t(const can_Message_t& /*msg*/) {
     }
 
-    void encode(can_Message_t& msg) const {
+    void encode(can_Message_t& /*msg*/) const {
     }
 
-    void decode(const can_Message_t& msg) {
+    void decode(const can_Message_t& /*msg*/) {
     }
 
     static constexpr uint8_t cmd_id     = 0x002;
@@ -440,13 +440,13 @@ struct Get_Temperature_msg_t final {
 struct Reboot_msg_t final {
     Reboot_msg_t() = default;
 
-    Reboot_msg_t(const can_Message_t& msg) {
+    Reboot_msg_t(const can_Message_t& /*msg*/) {
     }
 
-    void encode(can_Message_t& msg) const {
+    void encode(can_Message_t& /*msg*/) const {
     }
 
-    void decode(const can_Message_t& msg) {
+    void decode(const can_Message_t& /*msg*/) {
     }
 
     static constexpr uint8_t cmd_id     = 0x016;
@@ -481,13 +481,13 @@ struct Get_Bus_Voltage_Current_msg_t final {
 struct Clear_Errors_msg_t final {
     Clear_Errors_msg_t() = default;
 
-    Clear_Errors_msg_t(const can_Message_t& msg) {
+    Clear_Errors_msg_t(const can_Message_t& /*msg*/) {
     }
 
-    void encode(can_Message_t& msg) const {
+    void encode(can_Message_t& /*msg*/) const {
     }
 
-    void decode(const can_Message_t& msg) {
+    void decode(const can_Message_t& /*msg*/) {
     }
 
     static constexpr uint8_t cmd_id     = 0x018;
@@ -610,13 +610,13 @@ struct Get_Controller_Error_msg_t final {
 struct Enter_DFU_Mode_msg_t final {
     Enter_DFU_Mode_msg_t() = default;
 
-    Enter_DFU_Mode_msg_t(const can_Message_t& msg) {
+    Enter_DFU_Mode_msg_t(const can_Message_t& /*msg*/) {
     }
 
-    void encode(can_Message_t& msg) const {
+    void encode(can_Message_t& /*msg*/) const {
     }
 
-    void decode(const can_Message_t& msg) {
+    void decode(const can_Message_t& /*msg*/) {
     }
 
     static constexpr uint8_t cmd_id     = 0x01F;

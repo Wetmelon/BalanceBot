@@ -1,0 +1,3 @@
+[submodule "external/damp"]
+	path = external/damp
+	url = https://github.com/Wetmelon/damp.git
