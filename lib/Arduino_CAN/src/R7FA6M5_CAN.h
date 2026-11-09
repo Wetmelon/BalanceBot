@@ -73,6 +73,9 @@ public:
   /* This function is used by the library and should NOT be called by the user. */
   void onCanFDCallback(can_callback_args_t * p_args);
 
+  /* BalanceBot patch: the FSP instance, for test/test_can_no_ack to call R_CANFD_Write directly. */
+  can_ctrl_t * fspCtrl() { return &_canfd_ctrl; }
+
 
 private:
   int const _can_tx_pin;

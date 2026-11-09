@@ -25,7 +25,6 @@
  **************************************************************************************/
 
 extern "C" void canfd_callback(can_callback_args_t * p_args);
-extern "C" void canfd_channel_error_isr(void);
 
 /* BalanceBot patch: per channel, a 64-frame RX FIFO (the core configures 16) and a 32-frame TX FIFO
  * (the core has none): 3880 of the RA6M5's 4864 bytes of CANFD buffer RAM, at 20 bytes a frame. */
@@ -82,7 +81,8 @@ R7FA6M5_CAN::R7FA6M5_CAN(int const can_tx_pin, int const can_rx_pin)
   .p_afl              = nullptr,
   //.txmb_txi_enable    = ((1ULL << 9) | (1ULL << 0) | 0ULL),
   .txmb_txi_enable    = 0U, /* BalanceBot patch: TX goes through the TX FIFO; no TX buffer is written */
-  /* BalanceBot patch: the core's error interrupts back on (it turned them off for #532, fixed below). */
+  /* BalanceBot patch: the core's error interrupts back on. It turned them off for #532, whose cause is fixed in
+   * canfd_error_isr in r_canfd.c here (arduino/fsp#3). */
   .error_interrupts   = (R_CANFD_CFDC_CTR_EWIE_Msk | R_CANFD_CFDC_CTR_EPIE_Msk | R_CANFD_CFDC_CTR_BOEIE_Msk | R_CANFD_CFDC_CTR_BORIE_Msk | R_CANFD_CFDC_CTR_OLIE_Msk | 0U),
   .p_data_timing      = nullptr,
   .delay_compensation = (1),
@@ -140,17 +140,6 @@ bool R7FA6M5_CAN::begin(uint32_t const can_bitrate)
     .cfg = &_canfd_cfg,
   };
   init_ok &= IRQManager::getInstance().addPeripheral(IRQ_CANFD, &irq_req);
-
-  /* BalanceBot patch (arduino/ArduinoCore-renesas#532): our handler on this channel's error vector,
-   * in place of the FSP fork's canfd_error_isr. The vector is the channel's error interrupt, but the
-   * fork's handler takes everything on it for a global error: it clears CFDGERFL, leaves the
-   * channel's error flags set, and the interrupt fires again on return, forever. 16 system
-   * exceptions precede the IRQs in the vector table. */
-  if (_canfd_cfg.error_irq >= 0)
-  {
-    ((volatile uint32_t *) SCB->VTOR)[16 + _canfd_cfg.error_irq] = (uint32_t) canfd_channel_error_isr;
-    __DSB();
-  }
 
   /* There is only one global error channel shared between both CAN0 and CAN1
    * peripheral. If you are using e2Studio the error channel is configured via
@@ -245,9 +234,9 @@ int R7FA6M5_CAN::write(CanMsg const & msg)
   memcpy(can_msg.data, msg.data, can_msg.data_length_code);
 
   /* BalanceBot patch: queue into this channel's TX FIFO (begin() sets it up), sent in the order
-   * written; -FSP_ERR_CAN_TRANSMIT_NOT_READY when it is full. The stock code wrote TX buffer 0
-   * through R_CANFD_Write, whose ready check in FSP 4.0 (TMTSTS: not on the bus at this moment)
-   * passes a buffer whose frame is still waiting, and overwrites it. */
+   * written; -FSP_ERR_CAN_TRANSMIT_NOT_READY when it is full. The stock code wrote every frame to
+   * TX buffer 0 through R_CANFD_Write, which in FSP 4.0 overwrote a frame still waiting there
+   * (fixed in r_canfd.c here, arduino/fsp#2) and at best holds one frame. */
   uint32_t const fifo = _canfd_cfg.channel * COMMON_FIFOS_PER_CHANNEL;
   if (!(R_CANFD->CFDCFCC[fifo] & R_CANFD_CFDCFCC_CFE_Msk))
     R_CANFD->CFDCFCC[fifo] |= R_CANFD_CFDCFCC_CFE_Msk; /* first write, or after a channel reset or halt, which disable it */
@@ -383,34 +372,6 @@ extern "C" void canfd_callback(can_callback_args_t * p_args)
 {
   R7FA6M5_CAN * this_ptr = (R7FA6M5_CAN *)(p_args->p_context);
   this_ptr->onCanFDCallback(p_args);
-}
-
-/* BalanceBot patch: the channel error handler begin() installs (#532). It reads and clears the
- * channel's error flags and reports them as CAN_EVENT_ERR_CHANNEL. The interrupt status is cleared
- * first, so a flag raised after the read interrupts again. */
-extern "C" void canfd_channel_error_isr(void)
-{
-  FSP_CONTEXT_SAVE
-
-  IRQn_Type const irq = R_FSP_CurrentIrqGet();
-  R_BSP_IrqStatusClear(irq);
-
-  canfd_instance_ctrl_t * const p_ctrl = (canfd_instance_ctrl_t *) R_FSP_IsrContextGet(irq);
-  uint32_t const channel = p_ctrl->p_cfg->channel;
-  uint32_t const error = R_CANFD->CFDC[channel].ERFL & UINT16_MAX; /* the upper half is the last CRC */
-  R_CANFD->CFDC[channel].ERFL = ~error; /* the flags clear on 0; only those read */
-
-  if (error != 0U)
-  {
-    can_callback_args_t args = {};
-    args.channel   = channel;
-    args.event     = CAN_EVENT_ERR_CHANNEL;
-    args.error     = error;
-    args.p_context = p_ctrl->p_context;
-    p_ctrl->p_callback(&args);
-  }
-
-  FSP_CONTEXT_RESTORE
 }
 
 #endif /* ARDUINO_PORTENTA_C33 */

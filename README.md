@@ -22,7 +22,7 @@ git clone --recurse-submodules=external/damp git@github.com:Wetmelon/BalanceBot.
 pio run                              # both boards and the SIL
 pio run -e sil -t exec               # host SIL: exits 0 when every check holds
 pio run -e feather_m4_can -t upload  # flash one board (or portenta_c33)
-pio test -e feather_m4_can           # the CAN driver's FIFOs in loopback, on a board with no bus (or portenta_c33)
+pio test -e portenta_c33             # CAN tests on the board (or feather_m4_can); see below
 pio device monitor                   # telemetry at 10 Hz: mode, pitch [rad], x [m], wheel torques [N·m], ODrive health
 pio run -e portenta_c33 -t compiledb # compile_commands.json for clangd (one board at a time)
 ```
@@ -45,11 +45,13 @@ Neither core's GCC has C++20; `platformio.ini` swaps in GCC 12.3 for both. The A
 
 ## CAN on the C33
 
-`lib/Arduino_CAN` is the core's library from the Renesas Portenta core 1.6.0, the latest release (`renesas-ra@1.9.0`, pinned in `platformio.ini`); the core's `main` has nothing newer for it. The core compiles in Arduino's fork of FSP 4.0, which has no transmit FIFO support and a broken error handler, so the patches work on the CANFD registers where FSP falls short. Each is marked `BalanceBot patch` in [R7FA6M5_CAN.cpp](lib/Arduino_CAN/src/R7FA6M5_CAN.cpp). PlatformIO takes a library in `lib/` over the core's copy of the same name.
+`lib/Arduino_CAN` is the core's library from the Renesas Portenta core 1.6.0, the latest release (`renesas-ra@1.9.0`, pinned in `platformio.ini`); the core's `main` has nothing newer for it. The core links Arduino's fork of FSP 4.0 as a prebuilt `libfsp.a`, which has no transmit FIFO support, so the TX patch works on the CANFD registers directly. Each library change is marked `BalanceBot patch` in [R7FA6M5_CAN.cpp](lib/Arduino_CAN/src/R7FA6M5_CAN.cpp). PlatformIO takes a library in `lib/` over the core's copy of the same name.
+
+[r_canfd.c](lib/Arduino_CAN/src/r_canfd.c) is the FSP driver itself: `arduino/fsp`'s, as the core builds it, plus two fixes on their way upstream, [arduino/fsp#2](https://github.com/arduino/fsp/pull/2) (`R_CANFD_Write` overwrote a frame still pending in its buffer) and [arduino/fsp#3](https://github.com/arduino/fsp/pull/3) (the error handler never cleared the channel's error flags). The linker takes it in place of the `r_canfd.o` in `libfsp.a`; `lib_archive = no` makes that certain, since a link that pulled both would fail on duplicate symbols. Once the core ships a `libfsp.a` with both fixes, the file goes.
 
 - **RX:** `available()` drains the channel's receive FIFO, 64 frames deep (the core sets 16), into the library's 32-frame ring. The stock driver read one frame per call from a single receive buffer, which the next frame overwrites.
 - **TX:** `write()` puts the frame in a 32-frame transmit FIFO (common FIFO 0 of the channel, set up in `begin()`), sent in the order written, and returns at once, or returns `-FSP_ERR_CAN_TRANSMIT_NOT_READY` when the FIFO is full. The stock driver wrote transmit buffer 0, and FSP 4.0 lets a write overwrite a buffer whose frame has not gone out yet: its check only refuses a buffer while it is on the bus.
-- **Error interrupts:** on again (warning, passive, bus-off, recovery, overload), with a handler of our own on the channel's error vector. The FSP fork handled that interrupt as a global error and never cleared the channel's flags, so it fired again on return, forever ([arduino/ArduinoCore-renesas#532](https://github.com/arduino/ArduinoCore-renesas/issues/532)); the core's answer was to turn them off. `isError()` now reports the latched `canfd_error_t` flags until `clearError()`. Bus-off recovers on its own, per ISO 11898-1.
+- **Error interrupts:** on again (warning, passive, bus-off, recovery, overload), handled by the fixed `canfd_error_isr` in `r_canfd.c`. The FSP fork handled that interrupt as a global error and never cleared the channel's flags, so it fired again on return, forever ([arduino/ArduinoCore-renesas#532](https://github.com/arduino/ArduinoCore-renesas/issues/532)); the core's answer was to turn them off. `isError()` now reports the latched `canfd_error_t` flags until `clearError()`. Bus-off recovers on its own, per ISO 11898-1.
 - **Filters:** CAN0's standard-ID rule no longer delivers into CAN1's buffers ([#513](https://github.com/arduino/ArduinoCore-renesas/issues/513)).
 - **Loopback:** `enableInternalLoopback()` loops back internally and leaves the channel running; the stock call asked for the external loopback and left the channel halted.
 
@@ -62,9 +64,12 @@ Buffer RAM: two 64-frame RX FIFOs and two 32-frame TX FIFOs take 3880 of the RA6
 - **RX:** the receive FIFO is 64 frames, the M_CAN's maximum, up from 8: 16 ms of a saturated bus, against a 10 ms poll.
 - **TX:** `endPacket()` puts the frame in a 32-frame transmit FIFO, sent in the order written, and returns at once, or returns 0 when the FIFO is full. The stock driver had one transmit buffer, which every write overwrote whether or not its last frame had gone out, and then spun up to 8000 polls waiting for it.
 
-## Loopback test
+## CAN tests on the boards
 
-`pio test -e portenta_c33` or `pio test -e feather_m4_can` runs [test/test_can_loopback](test/test_can_loopback/test_main.cpp) on the board in its controller's loopback mode, with no bus: a burst of writes stops at the full 32-frame TX FIFO without blocking, and 64 frames come back in order. The stock drivers fail it.
+On a board on USB; `pio test -e <board>` runs every test for it, `-f <test>` one of them.
+
+- [test_can_loopback](test/test_can_loopback/test_main.cpp), both boards, any bus: the controller in loopback. A burst of writes stops at the full 32-frame TX FIFO without blocking, and 64 frames come back in order. The stock drivers fail it.
+- [test_can_no_ack](test/test_can_no_ack/test_main.cpp), C33 only, **no other powered node on the bus**: frames nobody ACKs. A write to a TX buffer whose frame is still pending is refused (arduino/fsp#2), and the error interrupts raised as the transmit error count passes warning and passive return, reported by `isError()` (arduino/fsp#3). With the core's `libfsp.a` alone, the board hangs in the first of those interrupts.
 
 ## Files
 
@@ -78,7 +83,8 @@ Buffer RAM: two 64-frame RX FIFOs and two 32-frame TX FIFOs take 3880 of the RA6
 | [sil/balance_sil.cpp](sil/balance_sil.cpp) | nonlinear plant, scripted scenarios, robustness check |
 | [docs/derivation.md](docs/derivation.md) | equations of motion, measurement map, design |
 | [include/damp_profile.hpp](include/damp_profile.hpp) | Damp backend: ETL, Damp math |
-| `lib/Arduino_CAN/` | the C33 core's CAN library, patched (above) |
+| `lib/Arduino_CAN/` | the C33 core's CAN library, patched, and FSP's `r_canfd.c` with two fixes (above) |
 | `lib/Adafruit_CAN/` | Adafruit_CAN for the Feather, patched (above) |
-| [test/test_can_loopback/](test/test_can_loopback/test_main.cpp) | each board's CAN FIFOs, on the board |
+| `test/` | CAN tests on the boards (see "CAN tests on the boards") |
+| `c33_upload.py` | C33 upload: a 1200 bps touch into the DFU bootloader first, since dfu-util's detach through the running sketch times out |
 | `lib/BNO080/` | SparkFun BNO080 library, vendored |
