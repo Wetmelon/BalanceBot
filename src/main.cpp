@@ -1,4 +1,4 @@
-// BalanceBot firmware: Arduino MKR WiFi 1010, MKR CAN shield, two ODrives, BNO080.
+// BalanceBot firmware: Arduino Portenta C33 on a Portenta Hat Carrier, two ODrives on CAN1, BNO080 on Wire2.
 //
 // Three tasks. The control task runs at 100 Hz: CAN in → bot::Controller::tick → CAN out, back to
 // back so the torque goes out on fresh data. The IMU task polls the BNO080 at 1 kHz. Telemetry
@@ -10,22 +10,23 @@
 #include "damp/toolbox/timing.hpp"
 
 #include <Arduino.h>
-#include <FreeRTOS_SAMD21.h>
+#include <Arduino_FreeRTOS.h>
 
-#include "MkrRgb.hpp"
 #include "bot_can.hpp"
 #include "imu.hpp"
+#include "portenta_rgb.hpp"
 // clang-format on
 
 BotCanClass bot_can;
 ImuWrapper  imu;
-MKRrgb      pixel;
+RgbC33      pixel;
 
 static constinit bot::Controller controller;
 static bot::Measurement          last_measurement;  // telemetry copies; a torn read only misprints
 static bot::Output               last_output;
 
-static constexpr float kTwoPi = 2.0f * damp::numbers::pi_v<float>;
+static constexpr float    kTwoPi    = 2.0f * damp::numbers::pi_v<float>;
+static constexpr uint32_t kPeriodMs = 10;
 
 // ODrive reports the rotor against the stator, in turns: the wheel against the body. The left
 // motor is mirrored, so forward is negative turns on it.
@@ -44,16 +45,15 @@ static bot::Measurement measure(const ImuWrapper::Sample& s) {
 
 static void controlTask(void*) {
     bot_can.setup();
-    bot_can.setAxisStates(AXIS_STATE_IDLE);
 
-    damp::Periodic<uint32_t> blink{500};  // [ticks] toggle: 1 Hz
+    damp::Periodic<uint32_t> blink{500};  // [ms] toggle: 1 Hz
     bool                     led = false;
 
     TickType_t wake = xTaskGetTickCount();
     for (;;) {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(10));
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(kPeriodMs));
 
-        bot_can.read();
+        bot_can.read(kPeriodMs);
         const ImuWrapper::Sample s   = imu.latest();
         const bot::Measurement   m   = measure(s);
         const bot::Output        out = controller.tick(m, {.imu = s.fresh, .drives = bot_can.healthy()}, {});
@@ -63,9 +63,10 @@ static void controlTask(void*) {
         }
         bot_can.sendTorques(-out.torque.left, +out.torque.right);
 
-        if (blink(10U)) {
+        digitalWrite(PIN_D7, bot_can.axisErrors() != 0 ? HIGH : LOW);
+        if (blink(kPeriodMs)) {
             led = !led;
-            digitalWrite(LED_BUILTIN, led ? HIGH : LOW);
+            digitalWrite(LEDB, led ? LOW : HIGH);  // active low
         }
         last_measurement = m;
         last_output      = out;
@@ -73,7 +74,7 @@ static void controlTask(void*) {
 }
 
 static void imuTask(void*) {
-    imu.begin();
+    imu.begin(Wire2);
     TickType_t wake = xTaskGetTickCount();
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1));
@@ -95,7 +96,9 @@ static void telemetryTask(void*) {
         Serial.print("\ttau ");
         Serial.print(o.torque.right, 2);
         Serial.print(' ');
-        Serial.println(o.torque.left, 2);
+        Serial.print(o.torque.left, 2);
+        Serial.print("\todrive ");
+        Serial.println(bot_can.healthy() ? "ok" : "missing or faulted");
     }
 }
 
@@ -105,12 +108,12 @@ void setup() {
     while ((millis() - start < 1000) && !Serial) {
         delay(1);
     }
-    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(PIN_D7, OUTPUT);  // high on an ODrive axis error
     pixel.setup();
 
-    xTaskCreate(controlTask, "control", 256, nullptr, tskIDLE_PRIORITY + 3, nullptr);
-    xTaskCreate(imuTask, "imu", 256, nullptr, tskIDLE_PRIORITY + 2, nullptr);
-    xTaskCreate(telemetryTask, "telemetry", 256, nullptr, tskIDLE_PRIORITY + 1, nullptr);
+    xTaskCreate(controlTask, "control", 1024, nullptr, tskIDLE_PRIORITY + 3, nullptr);
+    xTaskCreate(imuTask, "imu", 1024, nullptr, tskIDLE_PRIORITY + 2, nullptr);
+    xTaskCreate(telemetryTask, "telemetry", 1024, nullptr, tskIDLE_PRIORITY + 1, nullptr);
 
     Serial.println("Starting Scheduler");
     Serial.flush();

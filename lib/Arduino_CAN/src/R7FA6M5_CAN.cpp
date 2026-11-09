@@ -207,7 +207,17 @@ int R7FA6M5_CAN::write(CanMsg const & msg)
 
   memcpy(can_msg.data, msg.data, can_msg.data_length_code);
 
-  if(fsp_err_t const rc = R_CANFD_Write(&_canfd_ctrl, 0, &can_msg); rc != FSP_SUCCESS)
+  /* BalanceBot patch: take whichever of the 16 TX buffers is free (FSP refuses a busy one),
+   * instead of always buffer 0, which drops a frame written while the last is on the bus. */
+  static uint32_t constexpr TX_BUFFERS[] = {0, 1, 2, 3, 4, 5, 6, 7, 32, 33, 34, 35, 36, 37, 38, 39};
+  fsp_err_t rc = FSP_ERR_CAN_TRANSMIT_NOT_READY;
+  for (uint32_t const buffer : TX_BUFFERS)
+  {
+    rc = R_CANFD_Write(&_canfd_ctrl, buffer, &can_msg);
+    if (rc != FSP_ERR_CAN_TRANSMIT_NOT_READY)
+      break;
+  }
+  if (rc != FSP_SUCCESS)
     return -rc;
 
   return 1;
@@ -215,28 +225,23 @@ int R7FA6M5_CAN::write(CanMsg const & msg)
 
 size_t R7FA6M5_CAN::available()
 {
-  can_info_t can_info;
-  if (fsp_err_t const rc = R_CANFD_InfoGet(&_canfd_ctrl, &can_info); rc != FSP_SUCCESS)
-    return 0;
-
-  if (can_info.rx_mb_status > 0)
+  /* BalanceBot patch: drain this channel's RX FIFO (16 frames deep) into the ring buffer and
+   * return how many frames read() has. The stock code took one frame per call from a single RX
+   * message buffer, which the next frame overwrites, and returned that buffer's status bits. */
+  uint32_t const fifo = (_canfd_cfg.channel == 0) ? CANFD_RX_BUFFER_FIFO_0 : CANFD_RX_BUFFER_FIFO_1;
+  can_frame_t frame;
+  while (!_can_rx_buf.isFull() && R_CANFD_Read(&_canfd_ctrl, fifo, &frame) == FSP_SUCCESS)
   {
-    can_frame_t frame;
-    if (fsp_err_t const rc = R_CANFD_Read(&_canfd_ctrl, (can_info.rx_mb_status - 1), &frame); rc != FSP_SUCCESS)
-      return 0;
-
-    /* Extract the received CAN message. */
     CanMsg const msg
     (
       (frame.id_mode == CAN_ID_MODE_STANDARD) ? CanStandardId(frame.id) : CanExtendedId(frame.id),
       frame.data_length_code,
       frame.data
     );
-    /* Store the received CAN message in the receive buffer. */
     _can_rx_buf.enqueue(msg);
   }
 
-  return can_info.rx_mb_status;
+  return _can_rx_buf.available();
 }
 
 CanMsg R7FA6M5_CAN::read()

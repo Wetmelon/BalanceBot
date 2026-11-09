@@ -83,9 +83,21 @@ struct PitchMass {
     const double g       = n.gravity;
     const double D       = a * c - b * b;
     return damp::StateSpace<4, 1, 1>{
-        .A = {{0.0, 1.0, 0.0, 0.0}, {0.0, 0.0, -b * b * g / D, 0.0}, {0.0, 0.0, 0.0, 1.0}, {0.0, 0.0, a * b * g / D, 0.0}},
-        .B = {{0.0}, {(c / r + b) / D}, {0.0}, {-(a + b / r) / D}},
-        .C = {{1.0, 0.0, 0.0, 0.0}},
+        .A = {
+            {0.0, 1.0, 0.0, 0.0},
+            {0.0, 0.0, -b * b * g / D, 0.0},
+            {0.0, 0.0, 0.0, 1.0},
+            {0.0, 0.0, a * b * g / D, 0.0},
+        },
+        .B = {
+            {0.0},
+            {(c / r + b) / D},
+            {0.0},
+            {-(a + b / r) / D},
+        },
+        .C = {
+            {1.0, 0.0, 0.0, 0.0},
+        },
     };
 }
 
@@ -175,8 +187,8 @@ class Balancer {
 
         pitch_.update(ColVec<4, float>{p, v, m.pitch, m.pitch_rate});
         yaw_.update(ColVec<2, float>{psi, psi_rate});
-        const float tau  = pitch_.control(ColVec<1, float>{{p_ref_}}, ColVec<4, float>{p_ref_, speed, 0.0f, 0.0f}, {})(0);
-        const float dtau = yaw_.control(ColVec<1, float>{{psi_ref_}}, ColVec<2, float>{psi_ref_, yaw_rate}, {})(0);
+        const float tau  = pitch_.control(ColVec<1, float>{p_ref_}, ColVec<4, float>{p_ref_, speed, 0.0f, 0.0f}, {})(0);
+        const float dtau = yaw_.control(ColVec<1, float>{psi_ref_}, ColVec<2, float>{psi_ref_, yaw_rate}, {})(0);
 
         // Balance first: pitch takes what it needs, steering gets what is left on each wheel.
         constexpr float tau_max  = 2.0f * kWheelTorqueMax;
@@ -184,8 +196,8 @@ class Balancer {
         const float     dtau_max = tau_max - damp::abs(tau_sat);
         const float     dtau_sat = damp::clamp(dtau, -dtau_max, dtau_max);
 
-        pitch_.back_calculate(ColVec<1, float>{{tau_sat}});
-        yaw_.back_calculate(ColVec<1, float>{{dtau_sat}});
+        pitch_.back_calculate(ColVec<1, float>{tau_sat});
+        yaw_.back_calculate(ColVec<1, float>{dtau_sat});
         pitch_.predict();
         yaw_.predict();
 

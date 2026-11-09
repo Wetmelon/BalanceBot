@@ -1,6 +1,6 @@
 # Plant and design
 
-The code is [src/balance_controller.hpp](../src/balance_controller.hpp). The SIL [sil/balance_sil.cpp](../sil/balance_sil.cpp) integrates the nonlinear equations below and closes the loop around the same `bot::Controller` the firmware runs.
+The code is [include/balance_controller.hpp](../include/balance_controller.hpp). The SIL [sil/balance_sil.cpp](../sil/balance_sil.cpp) integrates the nonlinear equations below and closes the loop around the same `bot::Controller` the firmware runs.
 
 ## Coordinates
 

@@ -40,8 +40,8 @@ canfd_afl_entry_t const CANFD0_AFL[CANFD_CFG_AFL_CH0_RULE_NUM] = {
     .destination =
       {
         .minimum_dlc = CANFD_MINIMUM_DLC_0,
-        .rx_buffer   = (canfd_rx_mb_t) CANFD_RX_MB_1,
-        .fifo_select_flags = CANFD_RX_FIFO_1,
+        .rx_buffer   = (canfd_rx_mb_t) CANFD_RX_MB_0, /* BalanceBot patch: CAN0 standard frames went to CAN1's buffers */
+        .fifo_select_flags = CANFD_RX_FIFO_0,
       }
   }
 };

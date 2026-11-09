@@ -1,9 +1,8 @@
 #pragma once
 
-#include <FreeRTOS_SAMD21.h>
+#include <Arduino_FreeRTOS.h>
 #include <Wire.h>
 
-#include "MkrRgb.hpp"
 #include "SparkFun_BNO080_Arduino_Library.h"
 #include "balance_controller.hpp"
 #include "damp/toolbox/timing.hpp"
@@ -16,13 +15,13 @@ struct ImuWrapper {
         bool  fresh      = false;  ///< a report arrived within kTimeoutMs
     };
 
-    void begin() {
-        Wire.begin();
-        while (!bno_.begin(0x4A)) {
-            pixel.setColor(127, 0, 0);
+    /// Wait for the BNO080 on @p port, then start its reports. Call from a task.
+    void begin(TwoWire& port) {
+        port.begin();
+        while (!bno_.begin(0x4A, port)) {
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
-        pixel.setColor(0, 0, 127);
-        Wire.setClock(400000);
+        port.setClock(400000);
         bno_.enableARVRStabilizedGameRotationVector(10);  // [ms]
         bno_.enableUncalibratedGyro(10);                  // [ms] no zero-rate clamping
     }
