@@ -57,7 +57,7 @@ Buffer RAM: two 64-frame RX FIFOs and two 32-frame TX FIFOs take 3880 of the RA6
 
 ## CAN on the Feather M4 CAN
 
-`lib/CAN_Adafruit_Fork` is Adafruit's CAN fork (1.2.1, the latest) with two changes, each marked `BalanceBot patch` in [CANSAME5x.cpp](lib/CAN_Adafruit_Fork/src/CANSAME5x.cpp). It takes over from the registry copy, which is no longer a dependency.
+`lib/Adafruit_CAN` is [Adafruit_CAN](https://github.com/adafruit/Adafruit_CAN) 0.2.3, the maintained successor of the archived CAN Adafruit Fork, with one change: the `same5x-tx-rx-fifos` branch of [Wetmelon/Adafruit_CAN](https://github.com/Wetmelon/Adafruit_CAN/tree/same5x-tx-rx-fifos), on its way upstream. The vendored copy is that branch, byte for byte; once Adafruit releases it, the registry version can take its place.
 
 - **RX:** the receive FIFO is 64 frames, the M_CAN's maximum, up from 8: 16 ms of a saturated bus, against a 10 ms poll.
 - **TX:** `endPacket()` puts the frame in a 32-frame transmit FIFO, sent in the order written, and returns at once, or returns 0 when the FIFO is full. The stock driver had one transmit buffer, which every write overwrote whether or not its last frame had gone out, and then spun up to 8000 polls waiting for it.
@@ -79,6 +79,6 @@ Buffer RAM: two 64-frame RX FIFOs and two 32-frame TX FIFOs take 3880 of the RA6
 | [docs/derivation.md](docs/derivation.md) | equations of motion, measurement map, design |
 | [include/damp_profile.hpp](include/damp_profile.hpp) | Damp backend: ETL, Damp math |
 | `lib/Arduino_CAN/` | the C33 core's CAN library, patched (above) |
-| `lib/CAN_Adafruit_Fork/` | Adafruit's CAN library for the Feather, patched (above) |
+| `lib/Adafruit_CAN/` | Adafruit_CAN for the Feather, patched (above) |
 | [test/test_can_loopback/](test/test_can_loopback/test_main.cpp) | each board's CAN FIFOs, on the board |
 | `lib/BNO080/` | SparkFun BNO080 library, vendored |

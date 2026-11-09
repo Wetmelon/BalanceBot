@@ -3,12 +3,14 @@
 // CAN at 500 kbps to two ODrives in torque mode.
 //   Portenta C33: CAN1 through the Hat Carrier's transceiver. <Arduino_CAN.h> is the patched copy in
 //                 lib/Arduino_CAN: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
-//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051. <CAN.h> is the patched copy in
-//                 lib/CAN_Adafruit_Fork: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
+//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051. <CANSAME5x.h> is Adafruit_CAN in
+//                 lib/Adafruit_CAN, patched: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
 #if defined(ARDUINO_PORTENTA_C33)
 #include <Arduino_CAN.h>
 #else
-#include <CAN.h>
+#include <CANSAME5x.h>
+
+inline CANSAME5x CAN;  // Adafruit_CAN leaves the instance to the sketch
 #endif
 
 #include "ODriveEnums.h"

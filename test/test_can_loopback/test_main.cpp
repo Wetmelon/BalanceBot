@@ -24,7 +24,9 @@ static bool receive(int& id, int& data) {
     return true;
 }
 #else
-#include <CAN.h>
+#include <CANSAME5x.h>
+
+static CANSAME5x CAN;
 
 static bool beginLoopback() { return CAN.begin(500000) == 1 && CAN.loopback() == 1; }
 

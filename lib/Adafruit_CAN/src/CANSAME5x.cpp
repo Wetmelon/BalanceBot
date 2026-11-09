@@ -3,6 +3,7 @@
 // license information.
 
 #if defined(ADAFRUIT_FEATHER_M4_CAN)
+
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -26,13 +27,14 @@ namespace {
 #define state (reinterpret_cast<_canSAME5x_state *>(this->_state))
 
 #define DIV_ROUND(a, b) (((a) + (b) / 2) / (b))
-#define DIV_ROUND_UP(a, b) (((a) + (b)-1) / (b))
+#define DIV_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
 
 #define GCLK_CAN1 GCLK_PCHCTRL_GEN_GCLK1_Val
 #define GCLK_CAN0 GCLK_PCHCTRL_GEN_GCLK1_Val
-// BalanceBot patch: the M_CAN's maximum TX FIFO (32) and RX FIFO 0 (64) depths, from 1 and 8.
-// 64 eight-byte frames is 16 ms of a saturated 500 kbps bus, 32 is 8 ms; 3 kB of .canram.
-#define ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE (32)
+// The M_CAN's largest TX FIFO and RX FIFO 0. With 8-byte payloads that is 16
+// bytes per element, 1.5 kB of .canram per instance, and at 500 kbit/s 8 ms of
+// a saturated bus on the way out and 16 ms on the way in.
+#define ADAFRUIT_ZEROCAN_TX_FIFO_SIZE (32)
 #define ADAFRUIT_ZEROCAN_RX_FILTER_SIZE (1)
 #define ADAFRUIT_ZEROCAN_RX_FIFO_SIZE (64)
 #define ADAFRUIT_ZEROCAN_MAX_MESSAGE_LENGTH (8)
@@ -99,7 +101,7 @@ struct _canSAME5x_rx_fifo {
 } can_rx_fifo_t;
 
 struct _canSAME5x_state {
-  _canSAME5x_tx_buf tx_buffer[ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE];
+  _canSAME5x_tx_buf tx_buffer[ADAFRUIT_ZEROCAN_TX_FIFO_SIZE];
   _canSAME5x_rx_fifo rx_fifo[ADAFRUIT_ZEROCAN_RX_FIFO_SIZE];
   CanMramSidfe standard_rx_filter[ADAFRUIT_ZEROCAN_RX_FILTER_SIZE];
   CanMramXifde extended_rx_filter[ADAFRUIT_ZEROCAN_RX_FILTER_SIZE];
@@ -246,8 +248,7 @@ int CANSAME5x::begin(long baudrate) {
   {
     CAN_TXBC_Type bc = {};
     bc.bit.TBSA = (uint32_t)state->tx_buffer;
-    // BalanceBot patch: all of it a TX FIFO, instead of one dedicated buffer.
-    bc.bit.TFQS = ADAFRUIT_ZEROCAN_TX_BUFFER_SIZE;
+    bc.bit.TFQS = ADAFRUIT_ZEROCAN_TX_FIFO_SIZE; // no dedicated buffers
     bc.bit.TFQM = 0; // Messages are transmitted in the order submitted
     hw->TXBC.reg = bc.reg;
   }
@@ -350,8 +351,7 @@ int CANSAME5x::endPacket() {
 
   bus_autorecover();
 
-  // BalanceBot patch: queue into the TX FIFO and return, 0 when it is full. The stock code
-  // rewrote buffer 0, pending or not, then spun up to 8000 polls for it to go out.
+  // Queue the frame and return; fail if the TX FIFO is full.
   if (hw->TXFQS.bit.TFQF) {
     return 0;
   }
@@ -376,8 +376,8 @@ int CANSAME5x::endPacket() {
     memcpy(buf.data, _txData, _txLength);
   }
 
-  // TX buffer add request
-  __DMB(); // the element is in RAM before the M_CAN is told to read it
+  // TX buffer add request, once the element is in RAM
+  __DMB();
   hw->TXBAR.reg = 1UL << index;
 
   return 1;
@@ -563,7 +563,5 @@ extern "C" __attribute__((externally_visible)) void CAN1_Handler() {
 }
 
 CANSAME5x *CANSAME5x::instances[2];
-
-CANSAME5x CAN;
 
 #endif
