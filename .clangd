@@ -1,0 +1,13 @@
+# clangd only: the GCC build never reads this file.
+CompileFlags:
+  Add:
+    # The LQI designs run at compile time; clang's default step limit runs out where GCC's does not.
+    - -fconstexpr-steps=100000000
+    # Keep parsing past the Atmel header errors below instead of stopping at 19.
+    # - -ferror-limit=0
+  # GCC inliner tuning the SAMD core passes; clang has no such parameter.
+  Remove: [--param]
+
+Diagnostics:
+  # The Atmel SAMD21 CMSIS headers qualify anonymous bit-fields (__I uint32_t :8), which GCC accepts.
+  Suppress: [anon_bitfield_qualifiers]
