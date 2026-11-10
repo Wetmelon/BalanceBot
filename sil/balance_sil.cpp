@@ -2,14 +2,17 @@
 //
 //   pio run -e sil -t exec
 //
-// One script (hold, engage, push, drive, turn, tip over) runs on the nominal plant, then on a
-// plant 20 % off the nameplate with a 2° IMU mount error and every reading one period late. Then
-// the pitch loop, linearized, on all 16 corners of ±20 % with the readings late.
+// One script (hold, engage, push, drive, turn, tip over) runs on the nominal plant with the torque
+// arriving the measured 22 ms late, then on a plant 20 % off the nameplate with a 2° IMU mount
+// error and the torque a period later still. Then the pitch loop, linearized, on all 16 corners
+// of ±20 % with that longer delay.
 // Exit code 0 when every check holds.
 
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <deque>
+#include <limits>
 
 #include "balance_controller.hpp"
 #include "damp/matrix/eigen.hpp"
@@ -17,9 +20,10 @@
 
 namespace {
 
-constexpr double kDeg      = 3.14159265358979323846 / 180.0;
-constexpr int    kSubsteps = 10;   // plant steps per control period
-constexpr double kSpread   = 0.2;  // nameplate error the design must hold
+constexpr double kDeg       = 3.14159265358979323846 / 180.0;
+constexpr int    kSubsteps  = 10;                       // plant steps per control period
+constexpr double kSpread    = 0.2;                      // nameplate error the design must hold
+constexpr double kLateDelay = bot::kDelay + bot::kTs;  // [s] one period more than the design carries
 
 /// The nameplate off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
 /// axle and wheel inertia high (1) or low (0).
@@ -34,22 +38,21 @@ bot::Nameplate corner(unsigned c, double spread) {
     return n;
 }
 
-/// Spectral radius of the sampled pitch loop on plant n, the gain the design's, every reading one
-/// period late: z = [x; ξ; x_prev], u = −K·[x_prev; ξ], ξ += −Ts·p_prev.
-double late_loop_radius(const bot::Nameplate& n) {
-    const auto         d = damp::discretize(bot::pitch_plant(n), bot::kTs);
-    const auto&        K = bot::kPitchDesign.K;
+/// Spectral radius of the sampled pitch loop on plant n with the torque @p delay late (up to four
+/// periods), the gain the design's. The law reads x and the three torques it sent last:
+/// z = [x; τ₋₁ … τ₋₄; ξ], u = −K·[x; τ₋₁ … τ₋₃; ξ], ξ += −Ts·p.
+double delayed_loop_radius(const bot::Nameplate& n, double delay) {
+    const auto         d = damp::discretize(bot::pitch_plant(n), bot::kTs, damp::InputDelay<4>{delay}).value();
+    const auto&        K = bot::kPitchDesign.K;  // [x, τ₋₁, τ₋₂, τ₋₃, ξ]
     damp::Matrix<9, 9> L{};
-    for (size_t i = 0; i < 4; ++i) {
-        for (size_t j = 0; j < 4; ++j) {
-            L(i, j)     = d->A(i, j);
-            L(i, 5 + j) = -d->B(i, 0) * K(0, j);
+    for (size_t i = 0; i < 8; ++i) {
+        for (size_t j = 0; j < 8; ++j) {
+            L(i, j) = d.A(i, j) - (j < 7 ? d.B(i, 0) * K(0, j) : 0.0);  // τ₋₄ is only in the truth
         }
-        L(i, 4)     = -d->B(i, 0) * K(0, 4);
-        L(5 + i, i) = 1.0;  // x_prev ← x
+        L(i, 8) = -d.B(i, 0) * K(0, 7);
     }
-    L(4, 4)    = 1.0;
-    L(4, 5)    = -bot::kTs;
+    L(8, 8)    = 1.0;
+    L(8, 0)    = -bot::kTs;
     double rho = 0.0;
     for (const auto& z : damp::mat::compute_eigenvalues(L).values) {
         rho = std::fmax(rho, std::abs(std::complex<double>(z.real(), z.imag())));
@@ -61,8 +64,8 @@ double late_loop_radius(const bot::Nameplate& n) {
 struct Truth {
     bot::Nameplate n            = bot::kBot;
     double         friction     = 0.05;   // [N·m·s/rad] per wheel, wheel against body
-    double         pitch_offset = 0.0;    // [rad] the IMU reads this much more than the true lean
-    bool           late         = false;  // readings one period old
+    double         pitch_offset = 0.0;          // [rad] the IMU reads this much more than the true lean
+    double         delay        = bot::kDelay;  // [s] the torque reaches the wheels this late
 };
 
 /// Planar pitch dynamics, full nonlinear (docs/derivation.md), plus yaw.
@@ -147,25 +150,31 @@ void check(bool ok, const char* what, double value) {
 
 /// The control loop of main.cpp, closed on the plant. held: a hand keeps the bot still.
 struct Sim {
-    Plant            plant;
-    bot::Controller  controller{};
-    bot::Measurement reading{};
-    bot::Output      out{};
-    double           t        = 0.0;
-    bool             held     = true;
-    double           peak_tau = 0.0;
+    Plant                         plant;
+    bot::Controller               controller{};
+    bot::Output                   out{};
+    std::deque<bot::WheelTorques> pipe{};  // torques sent, one per substep, on their way to the wheels
+    double                        t        = 0.0;
+    bool                          held     = true;
+    double                        peak_tau = 0.0;
 
     void run(double seconds, bot::Command cmd = {}) {
+        const auto lag = static_cast<size_t>(std::lround(plant.t.delay * kSubsteps / bot::kTs));
         for (int i = 0; i < static_cast<int>(std::lround(seconds / bot::kTs)); ++i) {
-            const bot::Measurement now = plant.measure();
-            out                        = controller.tick(plant.t.late ? reading : now, {.imu = true, .drives = true}, cmd);
-            reading                    = now;
+            out = controller.tick(plant.measure(), {.imu = true, .drives = true}, cmd);
             if (out.mode == bot::Mode::Active) {
                 held = false;
             }
             peak_tau = std::fmax(peak_tau, std::fmax(std::fabs(out.torque.right), std::fabs(out.torque.left)));
-            for (int k = 0; k < kSubsteps && !held; ++k) {
-                plant.advance(out.torque, bot::kTs / kSubsteps);
+            for (int k = 0; k < kSubsteps; ++k) {
+                pipe.push_back(out.torque);
+                const bot::WheelTorques applied = pipe.size() > lag ? pipe.front() : bot::WheelTorques{};
+                if (pipe.size() > lag) {
+                    pipe.pop_front();
+                }
+                if (!held) {
+                    plant.advance(applied, bot::kTs / kSubsteps);
+                }
             }
             t += bot::kTs;
         }
@@ -212,8 +221,8 @@ void scenario(const char* name, const Truth& truth) {
 
 int main() {
     // Output stays ASCII: PlatformIO echoes it through the Windows console code page.
-    std::printf("pitch K [p v theta omega int_p]:");
-    for (size_t i = 0; i < 5; ++i) {
+    std::printf("pitch K [p v theta omega tau-1 tau-2 tau-3 int_p]:");
+    for (size_t i = 0; i < 8; ++i) {
         std::printf(" %+.3f", bot::kPitchDesign.K(0, i));
     }
     std::printf("\nyaw   K [psi psi_rate int_psi]:   ");
@@ -228,15 +237,35 @@ int main() {
     const double want = 5.0 * kDeg - static_cast<double>(bot::kPitchTrim);
     check(std::fabs(static_cast<double>(lean) - want) < 1e-4, "IMU roll 95 deg reads a 5 deg lean, less the trim [deg]", static_cast<double>(lean) / kDeg);
 
+    std::printf("readings that are not numbers\n");
+    {
+        bot::Controller        c{};
+        const bot::Measurement nan_pos{.wheel_r = std::numeric_limits<float>::quiet_NaN()};
+        bot::Output            o{};
+        for (int i = 0; i < 300; ++i) {
+            o = c.tick(nan_pos, {.imu = true, .drives = true}, {});
+        }
+        check(o.mode == bot::Mode::Idle && o.torque.right == 0.0f, "NaN position held upright 3 s: stays idle", 0.0);
+        for (int i = 0; i < 300; ++i) {
+            o = c.tick({}, {.imu = true, .drives = true}, {});
+        }
+        const bool engaged = o.mode == bot::Mode::Active;
+        o                  = c.tick(nan_pos, {.imu = true, .drives = true}, {});
+        check(engaged && o.mode == bot::Mode::Idle && o.torque.right == 0.0f, "NaN position while balancing: motors off", 0.0);
+    }
+
     scenario("nominal plant", {});
 
     // Heavier, taller body, lighter wheels: the corner closest to the edge.
-    scenario("plant 20 % off, IMU 2 deg off, readings one period late", {.n = corner(0b0111U, kSpread), .pitch_offset = 2.0 * kDeg, .late = true});
+    scenario("plant 20 % off, IMU 2 deg off, torque 32 ms late", {.n = corner(0b0111U, kSpread), .pitch_offset = 2.0 * kDeg, .delay = kLateDelay});
 
-    std::printf("pitch loop on every corner of +-20 %%, readings one period late\n");
+    // A period on either side of the design's delay: the drives' current loop alone is ~10 ms of it.
+    std::printf("pitch loop on every corner of +-20 %%, torque 12 ms and 32 ms late\n");
     double worst = 0.0;
     for (unsigned c = 0; c < 16; ++c) {
-        worst = std::fmax(worst, late_loop_radius(corner(c, kSpread)));
+        for (const double delay : {bot::kDelay - bot::kTs, kLateDelay}) {
+            worst = std::fmax(worst, delayed_loop_radius(corner(c, kSpread), delay));
+        }
     }
     check(worst < 1.0, "largest closed-loop |z|", worst);
 

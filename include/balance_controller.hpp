@@ -5,8 +5,9 @@
  * No Arduino here. main.cpp flashes it; sil/balance_sil.cpp closes the loop on the host around
  * the same objects. The plant is derived in docs/derivation.md.
  *
- * Two decoupled axes, each an LQI designed at compile time on the continuous plant sampled at Ts:
- *   pitch  x = [p, v, θ, ω], u = τ (sum of the wheel torques), integral on p
+ * Two decoupled axes, each an LQI designed at compile time:
+ *   pitch  x = [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃], u = τ (sum of the wheel torques), integral on p:
+ *          on the plant with its measured 22 ms delay, the last three torques sent as states
  *   yaw    x = [ψ, ψ̇],       u = Δτ (right minus left),      integral on ψ
  * The integrals hold the spot and the heading against a CoM offset, an IMU mount error or a slope.
  */
@@ -19,8 +20,12 @@
 #include "damp/math/math.hpp"
 #include "damp/matrix/concat.hpp"
 #include "damp/matrix/matrix.hpp"
+#include "damp/systems/discretization.hpp"
 #include "damp/systems/state_space.hpp"
 #include "damp/toolbox/iec61131.hpp"
+
+#include <bit>
+#include <cstdint>
 
 namespace bot {
 
@@ -133,8 +138,24 @@ inline constexpr damp::design::LQRWeights<2, 1, 1> kYawWeights{
     .Q_integral = 25.0,                   // ∫ψ 0.2 rad·s
 };
 
-inline constexpr auto kPitchDesign = damp::design::lqi(pitch_plant(kBot), kTs, kPitchWeights);
-inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
+/// [s] torque command to IMU reading, measured on the bot (docs/derivation.md): CAN, the drives'
+/// current loop and the IMU together. The pitch design carries it as kDelayTicks input registers.
+inline constexpr double kDelay      = 0.022;
+inline constexpr size_t kDelayTicks = 3;
+
+/// The pitch plant sampled at Ts with the torque arriving kDelay late: [x; τ₋₁ … τ₋₃], u = τ now.
+[[nodiscard]] constexpr auto pitch_model(const Nameplate& n) {
+    return damp::discretize(pitch_plant(n), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
+}
+
+// A discrete design takes the cost per step: the continuous weights × Ts give the same gains
+// within 1 % without the delay; the registers carry no weight of their own.
+inline constexpr auto kPitchDesign = damp::design::lqi(pitch_model(kBot), damp::design::LQRWeights<4 + kDelayTicks, 1, 1>{
+    .Q          = damp::blkdiag(kPitchWeights.Q * kTs, damp::Matrix<kDelayTicks, kDelayTicks>{}),
+    .R          = kPitchWeights.R * kTs,
+    .Q_integral = kPitchWeights.Q_integral * kTs,
+});
+inline constexpr auto kYawDesign = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
 
 /// Sensor readings, bot frame, forward positive.
 struct Measurement {
@@ -145,6 +166,18 @@ struct Measurement {
     float wheel_rate_r = 0.0f;  ///< [rad/s]
     float wheel_rate_l = 0.0f;  ///< [rad/s]
 };
+
+/// Every reading a number. A drive with no position to report (absolute setpoints on and no index,
+/// for one) sends NaN, and a NaN state makes the law ask for full torque. Checked on the bits:
+/// -ffast-math lets the compiler assume a float is never NaN and drop a comparison that tests it.
+[[nodiscard]] constexpr bool finite(const Measurement& m) {
+    for (const float v : {m.pitch, m.pitch_rate, m.wheel_r, m.wheel_l, m.wheel_rate_r, m.wheel_rate_l}) {
+        if ((std::bit_cast<uint32_t>(v) & 0x7F800000U) == 0x7F800000U) {
+            return false;
+        }
+    }
+    return true;
+}
 
 struct Command {
     float speed    = 0.0f;  ///< [m/s] forward
@@ -171,6 +204,7 @@ class Balancer {
         yaw_.reset();
         speed_cmd_.reset();
         yaw_cmd_.reset();
+        sent_    = {};
         p_ref_   = position(m);
         psi_ref_ = heading(m);
     }
@@ -192,9 +226,10 @@ class Balancer {
         p_ref_               = damp::clamp(p_ref_ + speed * Ts, p - kLeash, p + kLeash);
         psi_ref_             = damp::clamp(psi_ref_ + yaw_rate * Ts, psi - kYawLeash, psi + kYawLeash);
 
-        pitch_.update(ColVec<4, float>{p, v, m.pitch, m.pitch_rate});
+        // The torques still on their way to the wheels are part of the state.
+        pitch_.update(ColVec<7, float>{p, v, m.pitch, m.pitch_rate, sent_[0], sent_[1], sent_[2]});
         yaw_.update(ColVec<2, float>{psi, psi_rate});
-        const float tau  = pitch_.control(ColVec<1, float>{p_ref_}, ColVec<4, float>{p_ref_, speed, 0.0f, 0.0f}, {})(0);
+        const float tau  = pitch_.control(ColVec<1, float>{p_ref_}, ColVec<7, float>{p_ref_, speed, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, {})(0);
         const float dtau = yaw_.control(ColVec<1, float>{psi_ref_}, ColVec<2, float>{psi_ref_, yaw_rate}, {})(0);
 
         // Balance first: pitch takes what it needs, steering gets what is left on each wheel.
@@ -207,6 +242,7 @@ class Balancer {
         yaw_.back_calculate(ColVec<1, float>{dtau_sat});
         pitch_.predict();
         yaw_.predict();
+        sent_ = {tau_sat, sent_[0], sent_[1]};
 
         return {.right = 0.5f * (tau_sat + dtau_sat), .left = 0.5f * (tau_sat - dtau_sat)};
     }
@@ -226,6 +262,7 @@ class Balancer {
     damp::Law<kYawDesign, float>   yaw_{};
     damp::LowPass<1, float>        speed_cmd_{kCommandCutoff, static_cast<float>(kTs)};
     damp::LowPass<1, float>        yaw_cmd_{kCommandCutoff, static_cast<float>(kTs)};
+    ColVec<kDelayTicks, float>     sent_{};  ///< [N·m] the last pitch torques sent, newest first
     float                          p_ref_   = 0.0f;
     float                          psi_ref_ = 0.0f;
 };
@@ -253,9 +290,10 @@ class Controller {
     constexpr Output tick(const Measurement& m, const Health& h, const Command& cmd) {
         const Mode  before = mode_;
         const float tilt   = damp::abs(m.pitch);
+        const bool  drives = h.drives && finite(m);  // a reading that is not a number is a drive fault
         switch (mode_) {
             case Mode::Idle:
-                if (upright_(tilt < kEngageTilt && h.imu && h.drives, static_cast<float>(kTs))) {
+                if (upright_(tilt < kEngageTilt && h.imu && drives, static_cast<float>(kTs))) {
                     mode_ = Mode::Active;
                     balancer_.engage(m);
                 }
@@ -263,7 +301,7 @@ class Controller {
             case Mode::Active:
                 if (!h.imu) {
                     mode_ = Mode::Fault;
-                } else if (tilt > kTipTilt || !h.drives) {
+                } else if (tilt > kTipTilt || !drives) {
                     mode_ = Mode::Idle;
                     upright_.reset();
                 }

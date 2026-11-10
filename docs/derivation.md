@@ -132,6 +132,14 @@ It removes the steady error that a CoM offset, an IMU mount error, a slope or fr
 u = -K \begin{bmatrix} x - x^* \\ \xi \end{bmatrix}, \qquad x^* = \begin{bmatrix} p_\text{ref} & v_\text{cmd} & 0 & 0 \end{bmatrix}^\top
 ```
 
+Pitch carries the measured delay (below, "Identification on the bot"): its design runs on `pitch_model()`, the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, which `discretize(…, InputDelay<3>{θ_d})` writes as three registers of the torques already sent. The law measures them like any other state, so it reads $`[p, v, \theta, \omega, \tau_{k-1}, \tau_{k-2}, \tau_{k-3}]`$ and subtracts part of what is still on its way:
+
+```math
+\tau_k = -K \begin{bmatrix} x_k - x^* \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix}
+```
+
+A design on a sampled model takes its cost per step, so the weights are the continuous ones times $`T_s`$, with none on the registers: without the delay that gives the sampled-continuous gains within 1 %. Yaw stays on its delay-free design.
+
 | Pitch closed loop, on the model | Pole |
 | --- | --- |
 | lean | 30 rad/s |
@@ -171,10 +179,10 @@ flowchart LR
 
 ## Robustness check
 
-The SIL runs its script (hold, engage, release at 2°, push, drive, turn, tip over) twice: on the nameplate, and on a plant 20 % heavier and taller with 20 % lighter wheels, a 2° IMU mount error and every reading one period late. Then it linearizes the pitch loop with the readings one period late,
+The SIL runs its script (hold, engage, release at 2°, push, drive, turn, tip over) twice: on the nameplate with the torque reaching the wheels 22 ms late, and on a plant 20 % heavier and taller with 20 % lighter wheels, a 2° IMU mount error and the torque 32 ms late, a period more than the design carries. Then it linearizes the pitch loop with the torque 32 ms late, a truth model with four registers around the law's three,
 
 ```math
-z_k = \begin{bmatrix} x_k \\ \xi_k \\ x_{k-1} \end{bmatrix}, \qquad u_k = -K \begin{bmatrix} x_{k-1} \\ \xi_k \end{bmatrix},
+z_k = \begin{bmatrix} x_k \\ \tau_{k-1} \\ \vdots \\ \tau_{k-4} \\ \xi_k \end{bmatrix}, \qquad u_k = -K \begin{bmatrix} x_k \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix},
 ```
 
 on all 16 corners of ±20 % on body mass, body inertia, CoM height and wheel inertia, and checks that every closed-loop pole has $`|z| < 1`$. On the current design the largest is 0.995. The script's push is 0.5 N·s: traction caps the torque at 2 N·m a wheel, and much more knocks the bot over. After the drive at 0.5 m/s it allows 6 s to stop, for the slow position loop.
@@ -192,8 +200,8 @@ P_{\theta\tau}(j\omega) = \frac{S_{r\theta}(j\omega)}{S_{r\tau}(j\omega)}
 and likewise to the axle speed and to the wheel against the body. Against the linearized model above:
 
 - **Above about 2 Hz** the bot is the rigid model with three corrections, fitted on both paths at ±0.8 N·m from 1.5 to 10 Hz: the motors deliver 0.88 of the torque asked; the translating mass is 13.4 kg, not 7.2 (as if each wheel had 0.027 kg·m², not 0.006: friction the drive still has to move, most likely); and the response is 22 ms late, from the torque command to the IMU reading, a third of it the drives' 100 rad/s current loop. With $`c`$ held to the drop test, the fit's error is 0.23 in log magnitude against 0.78 for the nameplate.
-- **Below about 2 Hz** the drivetrain is stiff: the lean, the axle and the wheel against the body all move 5 to 20 times less than the model per N·m, with up to +100° of lead, and the response grows toward the model as the excitation grows from ±0.3 to ±0.8 N·m. That is stiction or the hub motors' cogging holding the wheel to the body at small motions, which no linear model of this plant has. It is why the ring and the dither are not in the SIL.
+- **Below about 2 Hz** the drivetrain is stiff: the lean, the axle and the wheel against the body all move 5 to 20 times less than the model per N·m, with up to +100° of lead, and the response grows toward the model as the excitation grows from ±0.3 to ±0.8 N·m. That is stiction or the hub motors' cogging holding the wheel to the body at small motions, which no linear model of this plant has. It is why the ring is not in the SIL.
 - **The IMU is not the cause:** the game rotation vector's pitch matches the integral of its own gyro from 0.4 to 12 Hz within 7 % and 17°, so the fusion does not mistake the axle's acceleration for lean.
 - **Anticogging** calibrated against a startup-relative position (the encoder's index does not reach the drive) made the low end stiffer still, so it is off.
 
-The next design follows from that: the delay in the model (`discretize(…, InputDelay)`), the fitted torque gain and mass, and an input disturbance estimated by an OFLQG in place of the integral, which takes a stuck drivetrain as a slowly varying torque.
+The pitch design now carries the 22 ms delay (Design, above). What follows from the rest: the fitted torque gain and mass in the model, and an input disturbance estimated by an OFLQG in place of the integral, which takes a stuck drivetrain as a slowly varying torque.
