@@ -16,8 +16,7 @@ The differences live in [include/board.hpp](include/board.hpp) and the driver ca
 ## Build
 
 ```bash
-git clone --recurse-submodules=external/damp git@github.com:Wetmelon/BalanceBot.git
-# or, in an existing clone: git submodule update --init   (not --recursive: Damp's own submodules are its test deps)
+git clone git@github.com:Wetmelon/BalanceBot.git   # Damp and ETL come from the PlatformIO registry
 
 pio run                              # both boards and the SIL
 pio run -e sil -t exec               # host SIL: exits 0 when every check holds
