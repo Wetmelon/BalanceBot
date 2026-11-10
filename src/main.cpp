@@ -39,6 +39,44 @@ static bot::Measurement measure(const ImuWrapper::Sample& s) {
     };
 }
 
+/// [N·m] total pitch torque added while balancing, to identify the plant from the CAN log; 0 turns it off.
+/// docs/derivation.md used 0.3 and 0.8.
+static constexpr float kExcitation = 0.0f;
+
+// PRBS9 (x^9 + x^5 + 1), a new bit every two ticks: ±kExcitation, flat to ~25 Hz, repeating every 10.2 s.
+static float excitation() {
+    static uint16_t lfsr = 0x1FF;
+    static uint32_t tick = 0;
+    if (tick++ % 2 == 0) {
+        lfsr = static_cast<uint16_t>(((lfsr << 1) | (((lfsr >> 8) ^ (lfsr >> 4)) & 1U)) & 0x1FFU);
+    }
+    return (lfsr & 1U) != 0U ? kExcitation : -kExcitation;
+}
+
+// The tick on CAN, for a logger on the bus: IDs no ODrive answers to, behind the drives in priority.
+// Little-endian; the wheels are in the drives' own encoder estimates.
+//   0x600  pitch [rad], pitch_rate [rad/s]                                    float32, float32
+//   0x601  torque left, right [N·m] as sent, before the left motor's mirror   float32, float32
+//   0x602  x [m], mode (0 idle, 1 active, 2 fault), flags (bit 0 IMU fresh,    float32, uint8, uint8,
+//          bit 1 drives healthy), excitation [mN·m] (in 0x601's torques)      int16
+static void logToCan(const bot::Measurement& m, const bot::Output& o, bool imu_fresh, float excite) {
+    uint8_t d[8] = {};
+    auto    floats = [&](uint32_t id, float a, float b) {
+        std::memcpy(d, &a, 4);
+        std::memcpy(d + 4, &b, 4);
+        bot_can.sendLog(id, d);
+    };
+    floats(0x600, m.pitch, m.pitch_rate);
+    floats(0x601, o.torque.left, o.torque.right);
+    const float   x  = bot::Balancer::position(m);
+    const int16_t mn = static_cast<int16_t>(std::lround(excite * 1000.0f));  // [mN·m]
+    std::memcpy(d, &x, 4);
+    d[4] = static_cast<uint8_t>(o.mode);
+    d[5] = (imu_fresh ? 1 : 0) | (bot_can.healthy() ? 2 : 0);
+    std::memcpy(d + 6, &mn, 2);
+    bot_can.sendLog(0x602, d);
+}
+
 static void controlTask(void*) {
     bot_can.setup();
 
@@ -52,12 +90,18 @@ static void controlTask(void*) {
         bot_can.read(kPeriodMs);
         const ImuWrapper::Sample s   = imu.latest();
         const bot::Measurement   m   = measure(s);
-        const bot::Output        out = controller.tick(m, {.imu = s.fresh, .drives = bot_can.healthy()}, {});
+        bot::Output              out = controller.tick(m, {.imu = s.fresh, .drives = bot_can.healthy()}, {});
+
+        // ponytail: past the 2 N·m traction clamp by at most kExcitation / 2; the drives allow far more
+        const float excite = (out.mode == bot::Mode::Active) ? excitation() : 0.0f;
+        out.torque.left += 0.5f * excite;
+        out.torque.right += 0.5f * excite;
 
         if (out.changed) {
             bot_can.setAxisStates(out.mode == bot::Mode::Active ? AXIS_STATE_CLOSED_LOOP_CONTROL : AXIS_STATE_IDLE);
         }
         bot_can.sendTorques(-out.torque.left, +out.torque.right);
+        logToCan(m, out, s.fresh, excite);
 
         digitalWrite(board::kFaultPin, bot_can.axisErrors() != 0 ? HIGH : LOW);
         if (blink(kPeriodMs)) {

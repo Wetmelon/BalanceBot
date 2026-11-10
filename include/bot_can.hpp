@@ -26,8 +26,8 @@ struct BotCanClass {
         for (ODriveArduinoCAN* m : {&left_motor, &right_motor}) {
             m->set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
             m->set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
-            m->set_limits_msg.Velocity_Limit        = 1000.0f;  // [rev/s]
-            m->set_limits_msg.Current_Limit         = 40.0f;    // [A]
+            m->set_limits_msg.Velocity_Limit        = 10.0f;  // [rev/s] 5 m/s: a runaway guard, past anything the bot asks
+            m->set_limits_msg.Current_Limit         = 16.0f;  // [A] BotWheel rating
         }
         left_motor.axis_id_  = 0;
         right_motor.axis_id_ = 1;
@@ -73,6 +73,14 @@ struct BotCanClass {
         right_motor.set_input_torque_msg.Input_Torque = right;
         send(left_motor, ODriveArduinoCAN::kSetInputTorqueMsg);
         send(right_motor, ODriveArduinoCAN::kSetInputTorqueMsg);
+    }
+
+    /// A frame for a logger on the bus. Sent only while a drive is there to ACK it (see send()), and
+    /// dropped when the TX FIFO is full: the drives' frames come first.
+    void sendLog(uint32_t id, const uint8_t (&data)[8]) {
+        if (heard(left_heartbeat_) || heard(right_heartbeat_)) {
+            canWrite({id, 8, data});
+        }
     }
 
     /// Both drives heard from within kHeartbeatTimeoutMs, neither reporting an axis error.
