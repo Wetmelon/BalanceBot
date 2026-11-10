@@ -945,8 +945,9 @@ void canfd_error_isr (void)
     uint32_t               channel  = p_ctrl->p_cfg->channel;
     can_callback_args_t    args     = {0U};
 
-    /* This vector is the channel error interrupt. Read and clear the channel error flags whatever else is handled
-     * here: while any is set the interrupt stays asserted, and it fires again as soon as the handler returns. */
+    /* This ISR is installed on the channel error interrupt, so always read and clear the channel error flags. The
+     * interrupt stays asserted while any of them is set: if they were left set, the ISR would run again as soon as
+     * it returned, forever. */
     args.error = R_CANFD->CFDC[channel].ERFL & UINT16_MAX; // Upper halfword contains latest CRC
     R_CANFD->CFDC[channel].ERFL = 0;
 
@@ -959,7 +960,7 @@ void canfd_error_isr (void)
         r_canfd_call_callback(p_ctrl, &args);
     }
 
-    /* The global error handler channel also handles global errors here. */
+    /* If this channel is the global error handler channel, also report and clear the global error flags. */
     uint32_t cfdgerfl = R_CANFD->CFDGERFL;
     if ((p_extend->global_err_channel == channel) && cfdgerfl)
     {
