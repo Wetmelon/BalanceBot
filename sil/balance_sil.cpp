@@ -187,13 +187,13 @@ void scenario(const char* name, const Truth& truth) {
     check(std::fabs(s.plant.th) < 0.5 * kDeg, "released at 2 deg: lean settles [deg]", s.plant.th / kDeg);
     check(std::fabs(s.plant.x - home) < 0.05, "released at 2 deg: holds the spot [m]", s.plant.x - home);
 
-    s.plant.push(2.0);
+    s.plant.push(0.5);  // traction caps the torque at 2 N·m a wheel: more and it slips
     s.run(5.0);
-    check(std::fabs(s.plant.x - home) < 0.05, "2 N.s push: back on the spot [m]", s.plant.x - home);
+    check(std::fabs(s.plant.x - home) < 0.05, "0.5 N.s push: back on the spot [m]", s.plant.x - home);
 
     s.run(6.0, {.speed = 0.5f});
     check(std::fabs(s.plant.v - 0.5) < 0.03, "drive 0.5 m/s [m/s]", s.plant.v);
-    s.run(4.0);
+    s.run(6.0);  // the tall body's zero at 3.3 rad/s (docs/derivation.md) keeps the position loop slow
     check(std::fabs(s.plant.v) < 0.02, "stop [m/s]", s.plant.v);
 
     s.run(5.0, {.yaw_rate = 1.0f});
@@ -225,7 +225,8 @@ int main() {
     std::printf("imu mapping\n");
     const double half = (90.0 + 5.0) * kDeg / 2.0;  // a roll of 95° about the IMU x axis
     const float  lean = bot::pitch_from_imu({static_cast<float>(std::cos(half)), static_cast<float>(std::sin(half)), 0.0f, 0.0f});
-    check(std::fabs(static_cast<double>(lean) - 5.0 * kDeg) < 1e-4, "IMU roll 95 deg reads a 5 deg lean [deg]", static_cast<double>(lean) / kDeg);
+    const double want = 5.0 * kDeg - static_cast<double>(bot::kPitchTrim);
+    check(std::fabs(static_cast<double>(lean) - want) < 1e-4, "IMU roll 95 deg reads a 5 deg lean, less the trim [deg]", static_cast<double>(lean) / kDeg);
 
     scenario("nominal plant", {});
 

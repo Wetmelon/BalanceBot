@@ -68,13 +68,30 @@ That is `pitch_plant()`:
 \qquad y = p
 ```
 
-On the nameplate the fall is unstable at $`\sqrt{abg/D} = 8.4`$ rad/s. Torque to position has zeros at
+On the measured nameplate (below) the fall is unstable at $`\lambda = \sqrt{abg/D} = 3.66`$ rad/s. Torque to position has zeros at
 
 ```math
-s = \pm\sqrt{\frac{b g}{c + b r}} = \pm 6.2 \text{ rad/s}
+s = \pm\sqrt{\frac{b g}{c + b r}} = \pm 3.3 \text{ rad/s}
 ```
 
-To roll forward, the wheels first roll back to lean the body over. That right-half-plane zero caps how fast the position loop can be.
+To roll forward, the wheels first roll back to lean the body over. That right-half-plane zero caps how fast the position loop can be. The tall, light body puts it low: position settles in seconds, not fractions of one.
+
+## The nameplate, measured
+
+The pitch plane only sees $`a`$, $`b`$ and $`c`$. Two of them are measured; `body_mass` only splits $`b`$ and $`c`$ into `com_height` and `body_inertia`.
+
+- **$`b`$ from the whole bot's CoM.** The wheels' mass sits on the axle, so the whole bot's mass moment about the axle is the body's: $`b = (M + 2m_w)\, h`$, with $`h`$ the whole bot's CoM above the axle. Balanced on a rod: $`h`$ = 4.25 in, so $`b`$ = 5.4 kg × 0.108 m = 0.583 kg·m.
+- **$`c`$ from a drop test.** With the drives idle, the bot released from about ±13° falls freely, the wheels rolling. Six drops fit $`\ddot\theta = \lambda^2 \sin(\theta - \theta_\text{eq})`$ to 1–8 mrad with $`\lambda`$ = 3.66 rad/s, so
+
+  ```math
+  c = \frac{b^2}{a} + \frac{b\, g}{\lambda^2} = 0.47 \text{ kg·m}^2
+  ```
+
+- **The trim** is the same fit's $`\theta_\text{eq}`$ = +0.004 rad: the IMU reading with the CoM over the axle.
+
+## Traction
+
+A wheel carries half the bot's weight, so it slips past $`\tau_\max = \mu\, \tfrac{1}{2}(M + 2m_w)\, g\, r`$: about 2 N·m at $`\mu \approx 0.9`$ (`kWheelTorqueMax`). A slipping wheel reads as speed the bot does not have, and the speed feedback then drives it harder: on the first ground test, with a 5 N·m cap, both wheels spun at the cap for seconds.
 
 ## Yaw
 
@@ -115,13 +132,13 @@ It removes the steady error that a CoM offset, an IMU mount error, a slope or fr
 u = -K \begin{bmatrix} x - x^* \\ \xi \end{bmatrix}, \qquad x^* = \begin{bmatrix} p_\text{ref} & v_\text{cmd} & 0 & 0 \end{bmatrix}^\top
 ```
 
-| Pitch closed loop | Pole |
+| Pitch closed loop, on the model | Pole |
 | --- | --- |
-| lean | 21 rad/s pair, $`\zeta = 0.78`$ |
-| position | 2.5 rad/s pair, $`\zeta = 0.76`$ |
+| lean | 30 rad/s |
+| position | 2.1 rad/s pair, $`\zeta = 0.62`$, and 1.9 rad/s |
 | integral | 0.7 rad/s |
 
-Faster lean poles balance more stiffly but lose margin: the robustness check below fails with the lean at 29 rad/s.
+The weight on $`\omega`$ is high (128) for a reason the model does not show: with 4, the bot rang at about 4 rad/s with $`\zeta \approx 0.25`$ after a push, and raising it slowed the ring and damped it. The identification below explains why the model cannot see that.
 
 ## The tick
 
@@ -160,6 +177,23 @@ The SIL runs its script (hold, engage, release at 2°, push, drive, turn, tip ov
 z_k = \begin{bmatrix} x_k \\ \xi_k \\ x_{k-1} \end{bmatrix}, \qquad u_k = -K \begin{bmatrix} x_{k-1} \\ \xi_k \end{bmatrix},
 ```
 
-on all 16 corners of ±20 % on body mass, body inertia, CoM height and wheel inertia, and checks that every closed-loop pole has $`|z| < 1`$. On the current design the largest is 0.993.
+on all 16 corners of ±20 % on body mass, body inertia, CoM height and wheel inertia, and checks that every closed-loop pole has $`|z| < 1`$. On the current design the largest is 0.995. The script's push is 0.5 N·s: traction caps the torque at 2 N·m a wheel, and much more knocks the bot over. After the drive at 0.5 m/s it allows 6 s to stop, for the slow position loop.
 
 After measuring the real bot, put the numbers in `Nameplate` and rerun the SIL. If a check fails, slow the lean (raise $`R`$) before anything else.
+
+## Identification on the bot
+
+The control tick goes out on CAN (README, "CAN log"), so a USB-CAN adapter records the loop at 100 Hz. To see the plant inside the closed loop, `kExcitation` in `main.cpp` adds a known torque $`r_k`$ to both wheels while the bot balances: a PRBS9 of ±0.3 or ±0.8 N·m, a new bit every 20 ms, flat to about 25 Hz. $`r`$ is uncorrelated with the hand, the floor and the sensor noise, so the plant from the torque as sent to the lean is the ratio of two cross-spectra (Welch, one PRBS period per segment):
+
+```math
+P_{\theta\tau}(j\omega) = \frac{S_{r\theta}(j\omega)}{S_{r\tau}(j\omega)}
+```
+
+and likewise to the axle speed and to the wheel against the body. Against the linearized model above:
+
+- **Above about 2 Hz** the bot is the rigid model with three corrections, fitted on both paths at ±0.8 N·m from 1.5 to 10 Hz: the motors deliver 0.88 of the torque asked; the translating mass is 13.4 kg, not 7.2 (as if each wheel had 0.027 kg·m², not 0.006: friction the drive still has to move, most likely); and the response is 22 ms late, from the torque command to the IMU reading, a third of it the drives' 100 rad/s current loop. With $`c`$ held to the drop test, the fit's error is 0.23 in log magnitude against 0.78 for the nameplate.
+- **Below about 2 Hz** the drivetrain is stiff: the lean, the axle and the wheel against the body all move 5 to 20 times less than the model per N·m, with up to +100° of lead, and the response grows toward the model as the excitation grows from ±0.3 to ±0.8 N·m. That is stiction or the hub motors' cogging holding the wheel to the body at small motions, which no linear model of this plant has. It is why the ring and the dither are not in the SIL.
+- **The IMU is not the cause:** the game rotation vector's pitch matches the integral of its own gyro from 0.4 to 12 Hz within 7 % and 17°, so the fusion does not mistake the axle's acceleration for lean.
+- **Anticogging** calibrated against a startup-relative position (the encoder's index does not reach the drive) made the low end stiffer still, so it is off.
+
+The next design follows from that: the delay in the model (`discretize(…, InputDelay)`), the fitted torque gain and mass, and an input disturbance estimated by an OFLQG in place of the integral, which takes a stuck drivetrain as a slowly varying torque.

@@ -27,22 +27,28 @@ namespace bot {
 using damp::ColVec;
 
 /// Physical parameters. "measure" marks an estimate: weigh and swing the real bot, then rerun the SIL.
+///
+/// The pitch plane only sees three numbers (pitch_mass): the translating mass a, the body's mass
+/// moment b = m·l and its inertia about the axle c. Two are measured: b from the whole bot's CoM,
+/// 4.25 in above the axle (the BotWheels' mass sits on the axle, so b = 5.4 kg × 0.108 m), and c
+/// from a drop test, the free fall with the drives idle at λ = 3.66 rad/s:
+/// c = b²/a + b·g/λ². body_mass only splits b and c into com_height and body_inertia.
 struct Nameplate {
-    double wheel_radius  = 0.0762;  ///< [m] 6 in wheel
-    double track_width   = 0.45;    ///< [m] between the tire contact patches (measure)
-    double com_height    = 0.18;    ///< [m] body CoM above the floor
-    double body_mass     = 4.0;     ///< [kg] everything that pitches: frame, battery, electronics (measure)
-    double body_inertia  = 0.03;    ///< [kg·m²] body about its own CoM, pitch axis (measure)
-    double wheel_mass    = 2.5;     ///< [kg] per side, what rides on the axle: hub motor and tire (measure)
-    double wheel_inertia = 0.006;   ///< [kg·m²] per side, the rotating part about the axle (measure)
-    double yaw_inertia   = 0.30;    ///< [kg·m²] whole bot about the vertical, wheels not spinning (measure)
-    double gravity       = 9.81;    ///< [m/s²]
+    double wheel_radius  = 0.08255;  ///< [m] 6.5 in BotWheel
+    double track_width   = 0.400;    ///< [m] between the tire contact patches: 15.75 in
+    double com_height    = 0.666;    ///< [m] body CoM above the floor: r + b / body_mass
+    double body_mass     = 1.0;      ///< [kg] everything that pitches: 48 in extrusion, acrylic, battery (measure)
+    double body_inertia  = 0.134;    ///< [kg·m²] body about its own CoM, pitch axis: c − b² / body_mass
+    double wheel_mass    = 2.2;      ///< [kg] per side, what rides on the axle: BotWheel, per ODrive
+    double wheel_inertia = 0.006;    ///< [kg·m²] per side, the rotating part about the axle (measure)
+    double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical: the wheels at ±d/2 (measure)
+    double gravity       = 9.81;     ///< [m/s²]
 };
 
 inline constexpr Nameplate kBot{};
 inline constexpr double    kTs = 0.01;  ///< [s] 100 Hz control period
 
-inline constexpr float kWheelTorqueMax = 5.0f;    ///< [N·m] per wheel
+inline constexpr float kWheelTorqueMax = 2.0f;    ///< [N·m] per wheel: traction, μ ≈ 0.9 × m·g/2 × r
 inline constexpr float kEngageTilt     = 0.087f;  ///< [rad] 5°: held this upright ...
 inline constexpr float kEngageTime     = 2.0f;    ///< [s] ... this long, the bot engages
 inline constexpr float kTipTilt        = 0.52f;   ///< [rad] 30°: past this it has fallen, motors off
@@ -50,8 +56,9 @@ inline constexpr float kLeash          = 0.3f;    ///< [m] position error the re
 inline constexpr float kYawLeash       = 0.5f;    ///< [rad] heading error the reference may lag by
 inline constexpr float kCommandCutoff  = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
 
-/// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry.
-inline constexpr float kPitchTrim = 0.0f;
+/// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry,
+/// or fit the drop test's falls both ways (here: +0.004 rad).
+inline constexpr float kPitchTrim = 0.004f;
 
 /// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c] (docs/derivation.md).
 struct PitchMass {
@@ -111,14 +118,14 @@ struct PitchMass {
 }
 
 // Bryson weights, 1 / (acceptable excursion)², on the continuous cost; Van Loan samples it at Ts.
-// Pitch closed loop: a 21 rad/s pair (the lean, against the 8.4 rad/s fall), a 2.5 rad/s pair
-// (position, under the 6.2 rad/s non-minimum-phase zero of torque to position), 0.7 rad/s (the
-// integral). Faster lean poles lose the margin the SIL asks for: ±20 % on the nameplate with every
-// reading a period late. A failed design does not compile.
+// Pitch: the tall body falls at 3.66 rad/s and puts the non-minimum-phase zero of torque to position
+// at 3.3 rad/s, so position is slow. The torque penalty holds the margin the SIL asks for (±20 % on
+// the nameplate with every reading a period late); the weight on ω damps the ring the bot showed
+// after a push, which the model does not (docs/derivation.md). A failed design does not compile.
 inline constexpr damp::design::LQRWeights<4, 1, 1> kPitchWeights{
-    .Q          = damp::diag(400.0, 4.0, 100.0, 0.0),  // p 5 cm, v 0.5 m/s, θ 6°
-    .R          = 0.4,                                 // τ 1.6 N·m
-    .Q_integral = 200.0,                               // ∫p 0.07 m·s
+    .Q          = damp::diag(400.0, 4.0, 100.0, 128.0),  // p 5 cm, v 0.5 m/s, θ 6°, ω 0.09 rad/s
+    .R          = 3.2,                                   // τ 0.56 N·m
+    .Q_integral = 200.0,                                 // ∫p 0.07 m·s
 };
 inline constexpr damp::design::LQRWeights<2, 1, 1> kYawWeights{
     .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
