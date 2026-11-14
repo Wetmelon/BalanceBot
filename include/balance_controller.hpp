@@ -14,6 +14,10 @@
 
 #pragma once
 
+#include <bit>
+#include <cstdint>
+
+#include "api/Common.h"
 #include "damp/controllers/lqi.hpp"
 #include "damp/filters/lowpass.hpp"
 #include "damp/math/geometry.hpp"
@@ -23,9 +27,6 @@
 #include "damp/systems/discretization.hpp"
 #include "damp/systems/state_space.hpp"
 #include "damp/toolbox/iec61131.hpp"
-
-#include <bit>
-#include <cstdint>
 
 namespace bot {
 
@@ -129,11 +130,22 @@ struct PitchMass {
 // at 3.3 rad/s, so position is slow. The torque penalty holds the margin the SIL asks for (±20 % on
 // the nameplate with every reading a period late); the weight on ω damps the ring the bot showed
 // after a push, which the model does not (docs/derivation.md). A failed design does not compile.
+constexpr double kPmax     = 0.02;                // [m]
+constexpr double kVmax     = 0.5;                 // [m/s]
+constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
+constexpr double kOmegaMax = 0.09;                // [rad/s]
+
 inline constexpr damp::design::LQRWeights<4, 1, 1> kPitchWeights{
-    .Q          = damp::diag(400.0, 4.0, 100.0, 128.0),  // p 5 cm, v 0.5 m/s, θ 6°, ω 0.09 rad/s
-    .R          = 3.2,                                   // τ 0.56 N·m
-    .Q_integral = 200.0,                                 // ∫p 0.07 m·s
+    .Q = damp::diag(
+        1.0 / sq(kPmax),
+        1.0 / sq(kVmax),
+        1.0 / sq(kThetaMax),
+        1.0 / sq(kOmegaMax)
+    ),                    // p 5 cm, v 0.5 m/s, θ 6°, ω 0.09 rad/s
+    .R          = 3.2,    // τ 0.56 N·m
+    .Q_integral = 200.0,  // ∫p 0.07 m·s
 };
+
 inline constexpr damp::design::LQRWeights<2, 1, 1> kYawWeights{
     .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
     .R          = 0.0625,                 // Δτ 4 N·m
