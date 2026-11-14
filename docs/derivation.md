@@ -132,13 +132,13 @@ It removes the steady error that a CoM offset, an IMU mount error, a slope or fr
 u = -K \begin{bmatrix} x - x^* \\ \xi \end{bmatrix}, \qquad x^* = \begin{bmatrix} p_\text{ref} & v_\text{cmd} & 0 & 0 \end{bmatrix}^\top
 ```
 
-Pitch carries the measured delay (below, "Identification on the bot"): its design runs on `pitch_model()`, the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, which `discretize(…, InputDelay<3>{θ_d})` writes as three registers of the torques already sent. The law measures them like any other state, so it reads $`[p, v, \theta, \omega, \tau_{k-1}, \tau_{k-2}, \tau_{k-3}]`$ and subtracts part of what is still on its way:
+Pitch carries the measured delay (below, "Identification on the bot"): `design::lqi(pitch_plant(), Ts, InputDelay<3>{θ_d}, weights)` designs on the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, three registers of the torques already sent. The law holds them itself, the torques `back_calculate` recorded, so it takes $`[p, v, \theta, \omega]`$ and subtracts part of what is still on its way:
 
 ```math
 \tau_k = -K \begin{bmatrix} x_k - x^* \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix}
 ```
 
-A design on a sampled model takes its cost per step, so the weights are the continuous ones times $`T_s`$, with none on the registers: without the delay that gives the sampled-continuous gains within 1 %. Yaw stays on its delay-free design.
+The weights are the continuous ones on the plant, and the cost is discretized exactly on the delayed model, the plant running on the torque it holds within each period; the registers carry no weight of their own. That moves the gains 0.02 % from the per-step weights (continuous × $`T_s`$) the design used before. Yaw stays on its delay-free design.
 
 | Pitch closed loop, on the model | Pole |
 | --- | --- |
@@ -169,13 +169,15 @@ flowchart LR
   p_\text{ref} \leftarrow \operatorname{clamp}\left( p_\text{ref} + v_\text{cmd}\, T_s,\ p - L,\ p + L \right)
   ```
 
+- **Lean limit:** the leash bounds the position error but not its integral, so a bot held off the reference (a wall, a hand) used to lean on until it passed 30°. Read the pitch law as a cascade, $`\tau = -K_\theta(\theta - \theta_c) - \dots`$, with $`\theta_c = -(K_p e_p + K_v e_v + K_\xi \xi)/K_\theta`$ the lean that position, speed and the integral ask for. The integral holds at most `kIntegralLean` = 8° of it, $`|\xi| \le |K_\theta|\, \theta_{\xi,\max} / |K_\xi|`$, and $`\theta_c`$ at most `kLeanMax` = 15°. Against a wall the bot then leans 18.6° and stays there (the delay registers and gravity add to $`\theta_c`$); the SIL checks it.
+
 - **Mixer:** pitch comes first, steering gets what that leaves on each wheel, with $`\tau_\max`$ = `kWheelTorqueMax`:
 
   ```math
   |\tau| \le 2\tau_\max, \qquad |\Delta\tau| \le 2\tau_\max - |\tau|, \qquad \tau_R = \frac{\tau + \Delta\tau}{2}, \quad \tau_L = \frac{\tau - \Delta\tau}{2}
   ```
 
-  The torques actually applied go back to each law (`back_calculate`), so the integrators do not wind up against the clamp.
+  The torques actually applied go back to each law (`back_calculate`), so the integrators do not wind up against the clamp or the lean limit. The torque is left bit-for-bit as the law returned it unless a clamp acts: under `-ffast-math` a rounding difference reads as a clamp and holds the integral.
 
 ## Robustness check
 

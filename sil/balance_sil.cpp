@@ -2,7 +2,7 @@
 //
 //   pio run -e sil -t exec
 //
-// One script (hold, engage, push, drive, turn, tip over) runs on the nominal plant with the torque
+// One script (hold, engage, push, drive, turn, a wall, tip over) runs on the nominal plant with the torque
 // arriving the measured 22 ms late, then on a plant 20 % off the nameplate with a 2° IMU mount
 // error and the torque a period later still. Then the pitch loop, linearized, on all 16 corners
 // of ±20 % with that longer delay.
@@ -72,6 +72,7 @@ struct Truth {
 struct Plant {
     Truth  t;
     double x = 0.0, v = 0.0, th = 0.0, w = 0.0, psi = 0.0, psi_rate = 0.0;
+    double wall = std::numeric_limits<double>::infinity();  // [m] an obstacle the axle stops against
 
     struct Rates {
         double dx, dv, dth, dw, dpsi, dpsi_rate;
@@ -110,6 +111,14 @@ struct Plant {
         w += sum(k1.dw, k2.dw, k3.dw, k4.dw);
         psi += sum(k1.dpsi, k2.dpsi, k3.dpsi, k4.dpsi);
         psi_rate += sum(k1.dpsi_rate, k2.dpsi_rate, k3.dpsi_rate, k4.dpsi_rate);
+        if (x > wall) {  // an inelastic stop at the axle: the impulse that stops it swings the body on
+            const auto [a, b, c] = bot::pitch_mass(t.n);
+            x                    = wall;
+            if (v > 0.0) {
+                w += b * std::cos(th) * v / c;
+                v = 0.0;
+            }
+        }
         if (std::fabs(th) > 90.0 * kDeg) {  // on the floor
             th = std::copysign(90.0 * kDeg, th);
             v = w = 0.0;
@@ -211,6 +220,23 @@ void scenario(const char* name, const Truth& truth) {
     check(std::fabs(s.plant.psi_rate) < 0.02, "stop turning [rad/s]", s.plant.psi_rate);
 
     check(s.peak_tau <= static_cast<double>(bot::kWheelTorqueMax), "peak wheel torque within the limit [N.m]", s.peak_tau);
+
+    // Driven into a wall and left against it: the reference runs a leash ahead, the integral on it.
+    s.plant.wall = s.plant.x + 0.1;
+    s.run(2.0, {.speed = 0.3f});
+    double peak_lean = 0.0;
+    for (int i = 0; i < 1000 && s.out.mode == bot::Mode::Active; ++i) {  // 10 s against it
+        s.run(bot::kTs);
+        peak_lean = std::fmax(peak_lean, std::fabs(s.plant.th));
+    }
+    check(s.out.mode == bot::Mode::Active && peak_lean < 20.0 * kDeg, "10 s against a wall: still up, lean [deg]", peak_lean / kDeg);
+    s.plant.wall = std::numeric_limits<double>::infinity();
+    peak_lean    = 0.0;
+    for (int i = 0; i < 1000 && s.out.mode == bot::Mode::Active; ++i) {
+        s.run(bot::kTs);
+        peak_lean = std::fmax(peak_lean, std::fabs(s.plant.th));
+    }
+    check(s.out.mode == bot::Mode::Active && peak_lean < 20.0 * kDeg, "wall taken away: catches itself, lean [deg]", peak_lean / kDeg);
 
     s.plant.push(-25.0);
     s.run(1.0);

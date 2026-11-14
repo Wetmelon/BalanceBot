@@ -6,8 +6,8 @@
  * the same objects. The plant is derived in docs/derivation.md.
  *
  * Two decoupled axes, each an LQI designed at compile time:
- *   pitch  x = [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃], u = τ (sum of the wheel torques), integral on p:
- *          on the plant with its measured 22 ms delay, the last three torques sent as states
+ *   pitch  x = [p, v, θ, ω], u = τ (sum of the wheel torques), integral on p: designed for
+ *          the measured 22 ms delay, the law holds the last three torques sent
  *   yaw    x = [ψ, ψ̇],       u = Δτ (right minus left),      integral on ψ
  * The integrals hold the spot and the heading against a CoM offset, an IMU mount error or a slope.
  */
@@ -59,6 +59,8 @@ inline constexpr float kEngageTime     = 2.0f;    ///< [s] ... this long, the bo
 inline constexpr float kTipTilt        = 0.52f;   ///< [rad] 30°: past this it has fallen, motors off
 inline constexpr float kLeash          = 0.3f;    ///< [m] position error the reference may lag a push by
 inline constexpr float kYawLeash       = 0.5f;    ///< [rad] heading error the reference may lag by
+inline constexpr float kLeanMax        = 0.26f;   ///< [rad] 15°: the most lean position, speed and the integral may ask for
+inline constexpr float kIntegralLean   = 0.14f;   ///< [rad] 8° of it the integral may hold: a CoM offset, an IMU error, a slope
 inline constexpr float kCommandCutoff  = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
 
 /// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry,
@@ -139,23 +141,15 @@ inline constexpr damp::design::LQRWeights<2, 1, 1> kYawWeights{
 };
 
 /// [s] torque command to IMU reading, measured on the bot (docs/derivation.md): CAN, the drives'
-/// current loop and the IMU together. The pitch design carries it as kDelayTicks input registers.
+/// current loop and the IMU together. The pitch law holds the torques still on their way in
+/// kDelayTicks registers.
 inline constexpr double kDelay      = 0.022;
 inline constexpr size_t kDelayTicks = 3;
 
-/// The pitch plant sampled at Ts with the torque arriving kDelay late: [x; τ₋₁ … τ₋₃], u = τ now.
-[[nodiscard]] constexpr auto pitch_model(const Nameplate& n) {
-    return damp::discretize(pitch_plant(n), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
-}
-
-// A discrete design takes the cost per step: the continuous weights × Ts give the same gains
-// within 1 % without the delay; the registers carry no weight of their own.
-inline constexpr auto kPitchDesign = damp::design::lqi(pitch_model(kBot), damp::design::LQRWeights<4 + kDelayTicks, 1, 1>{
-    .Q          = damp::blkdiag(kPitchWeights.Q * kTs, damp::Matrix<kDelayTicks, kDelayTicks>{}),
-    .R          = kPitchWeights.R * kTs,
-    .Q_integral = kPitchWeights.Q_integral * kTs,
-});
-inline constexpr auto kYawDesign = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
+// Integral action on each plant's output y = C·x: p for pitch, ψ for yaw. The pitch design runs on
+// the plant with the torque arriving kDelay late, its cost discretized exactly on that model.
+inline constexpr auto kPitchDesign = damp::design::lqi(pitch_plant(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchWeights);
+inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
 
 /// Sensor readings, bot frame, forward positive.
 struct Measurement {
@@ -204,7 +198,6 @@ class Balancer {
         yaw_.reset();
         speed_cmd_.reset();
         yaw_cmd_.reset();
-        sent_    = {};
         p_ref_   = position(m);
         psi_ref_ = heading(m);
     }
@@ -226,11 +219,30 @@ class Balancer {
         p_ref_               = damp::clamp(p_ref_ + speed * Ts, p - kLeash, p + kLeash);
         psi_ref_             = damp::clamp(psi_ref_ + yaw_rate * Ts, psi - kYawLeash, psi + kYawLeash);
 
-        // The torques still on their way to the wheels are part of the state.
-        pitch_.update(ColVec<7, float>{p, v, m.pitch, m.pitch_rate, sent_[0], sent_[1], sent_[2]});
-        yaw_.update(ColVec<2, float>{psi, psi_rate});
-        const float tau  = pitch_.control(ColVec<1, float>{p_ref_}, ColVec<7, float>{p_ref_, speed, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, {})(0);
-        const float dtau = yaw_.control(ColVec<1, float>{psi_ref_}, ColVec<2, float>{psi_ref_, yaw_rate}, {})(0);
+        // Read as a cascade, u = −K_θ·(θ − θ_c) − …: the lean θ_c is what p, v and the integral ask for.
+        // The integral holds at most kIntegralLean of it and θ_c at most kLeanMax, or a bot held off
+        // its reference (a wall, a hand) leans on until it falls. back_calculate sees the clamp, so the
+        // integral stops winding against it.
+        constexpr auto& K        = kPitchDesign.K;  // [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, ξ]
+        constexpr float k_p      = static_cast<float>(K(0, 0));
+        constexpr float k_v      = static_cast<float>(K(0, 1));
+        constexpr float k_th     = damp::abs(static_cast<float>(K(0, 2)));
+        constexpr float k_xi     = static_cast<float>(K(0, 7));
+        constexpr float xi_max   = k_th * kIntegralLean / damp::abs(k_xi);
+        constexpr float lean_tau = k_th * kLeanMax;  // [N·m] the torque that asks for kLeanMax
+        float&          xi       = pitch_.integral.xi(0);
+        xi                       = damp::clamp(xi, -xi_max, xi_max);
+
+        // The pitch law holds the torques still on their way to the wheels: what back_calculate recorded.
+        pitch_.update({p, v, m.pitch, m.pitch_rate});
+        yaw_.update({psi, psi_rate});
+        const float u_law = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
+        const float outer = -((k_p * (p - p_ref_)) + (k_v * (v - speed)) + (k_xi * xi));
+        float       tau   = u_law;  // untouched unless clamped: back_calculate reads any difference as a clamp
+        if (damp::abs(outer) > lean_tau) {
+            tau += damp::clamp(outer, -lean_tau, lean_tau) - outer;
+        }
+        const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
 
         // Balance first: pitch takes what it needs, steering gets what is left on each wheel.
         constexpr float tau_max  = 2.0f * kWheelTorqueMax;
@@ -238,11 +250,10 @@ class Balancer {
         const float     dtau_max = tau_max - damp::abs(tau_sat);
         const float     dtau_sat = damp::clamp(dtau, -dtau_max, dtau_max);
 
-        pitch_.back_calculate(ColVec<1, float>{tau_sat});
-        yaw_.back_calculate(ColVec<1, float>{dtau_sat});
+        pitch_.back_calculate(tau_sat);
+        yaw_.back_calculate(dtau_sat);
         pitch_.predict();
         yaw_.predict();
-        sent_ = {tau_sat, sent_[0], sent_[1]};
 
         return {.right = 0.5f * (tau_sat + dtau_sat), .left = 0.5f * (tau_sat - dtau_sat)};
     }
@@ -262,7 +273,6 @@ class Balancer {
     damp::Law<kYawDesign, float>   yaw_{};
     damp::LowPass<1, float>        speed_cmd_{kCommandCutoff, static_cast<float>(kTs)};
     damp::LowPass<1, float>        yaw_cmd_{kCommandCutoff, static_cast<float>(kTs)};
-    ColVec<kDelayTicks, float>     sent_{};  ///< [N·m] the last pitch torques sent, newest first
     float                          p_ref_   = 0.0f;
     float                          psi_ref_ = 0.0f;
 };
