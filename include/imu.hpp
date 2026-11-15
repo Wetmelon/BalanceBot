@@ -24,9 +24,10 @@ struct ImuWrapper {
         bno_.enableUncalibratedGyro(10);                  // [ms] no zero-rate clamping
     }
 
-    /// Poll; call every 1 ms.
-    void read() {
-        if (bno_.dataAvailable()) {
+    /// Poll; call every 1 ms. @return true when a gyro report arrived: a new period of the IMU's clock.
+    bool read() {
+        const uint16_t report = bno_.getReadings();
+        if (report != 0) {
             const damp::Quaternion<float> q{bno_.getQuatReal(), bno_.getQuatI(), bno_.getQuatJ(), bno_.getQuatK()};
             const float                   pitch = bot::pitch_from_imu(q);
             const float                   rate  = bno_.getUncalibratedGyroX();
@@ -40,6 +41,7 @@ struct ImuWrapper {
             sample_.fresh = false;
             taskEXIT_CRITICAL();
         }
+        return report == SENSOR_REPORTID_UNCALIBRATED_GYRO;
     }
 
     /// The last reading, copied whole so pitch and rate come from the same report.

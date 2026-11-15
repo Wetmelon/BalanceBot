@@ -1,8 +1,8 @@
 // BalanceBot firmware: two ODrives on CAN, BNO080 on I²C. Portenta C33 or Feather M4 CAN: see board.hpp.
 //
-// Three tasks. The control task runs at 100 Hz: CAN in → bot::Controller::tick → CAN out, back to
-// back so the torque goes out on fresh data. The IMU task polls the BNO080 at 1 kHz. Telemetry
-// prints at 10 Hz.
+// Three tasks. The control task runs on each BNO080 gyro report (100 Hz, the IMU's clock): CAN in →
+// bot::Controller::tick → CAN out, back to back so the torque goes out on fresh data. The IMU task
+// polls the BNO080 at 1 kHz. Telemetry prints at 10 Hz.
 
 // Damp first: Arduino.h defines abs, min, max, F, ... as macros, which break any header after it.
 // clang-format off
@@ -23,6 +23,7 @@ static bot::Output               last_output;
 
 static constexpr float    kTwoPi    = 2.0f * damp::numbers::pi_v<float>;
 static constexpr uint32_t kPeriodMs = 10;
+static TaskHandle_t       control_task = nullptr;  // the IMU task wakes it on each gyro report
 
 // ODrive reports the rotor against the stator, in turns: the wheel against the body. The left
 // motor is mirrored, so forward is negative turns on it.
@@ -78,14 +79,17 @@ static void logToCan(const bot::Measurement& m, const bot::Output& o, bool imu_f
 }
 
 static void controlTask(void*) {
-    bot_can.setup();
+    bot_can.setup({.velocity = bot::kDriveVelocityLimit, .current = bot::kDriveCurrentLimit});
 
     damp::Periodic<uint32_t> blink{500};  // [ms] toggle: 1 Hz
     bool                     led = false;
 
-    TickType_t wake = xTaskGetTickCount();
     for (;;) {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(kPeriodMs));
+        // One tick per gyro report, so every tick reads a sample of the same age. On the C33's own
+        // 100 Hz the two clocks drift through each other (0.25 % apart: every 4 s), and near each
+        // crossing ticks read a sample twice, then skip one: a tick-to-tick jitter the law turns into
+        // a buzz. With no reports (the IMU not up yet, or lost) it ticks every 1.5 periods.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kPeriodMs + kPeriodMs / 2));
 
         bot_can.read(kPeriodMs);
         const ImuWrapper::Sample s   = imu.latest();
@@ -118,7 +122,9 @@ static void imuTask(void*) {
     TickType_t wake = xTaskGetTickCount();
     for (;;) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(1));
-        imu.read();
+        if (imu.read()) {
+            xTaskNotifyGive(control_task);
+        }
     }
 }
 
@@ -151,7 +157,7 @@ void setup() {
     pinMode(board::kFaultPin, OUTPUT);
     board::setupLeds();
 
-    xTaskCreate(controlTask, "control", 1024, nullptr, tskIDLE_PRIORITY + 3, nullptr);
+    xTaskCreate(controlTask, "control", 1024, nullptr, tskIDLE_PRIORITY + 3, &control_task);
     xTaskCreate(imuTask, "imu", 1024, nullptr, tskIDLE_PRIORITY + 2, nullptr);
     xTaskCreate(telemetryTask, "telemetry", 1024, nullptr, tskIDLE_PRIORITY + 1, nullptr);
 

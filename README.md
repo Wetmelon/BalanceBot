@@ -32,7 +32,7 @@ Neither core's GCC has C++20; `platformio.ini` swaps in GCC 12.3 for both. The A
 ## Before the first run
 
 1. **ODrives:** torque control, CAN at 500 kbps, node 0 left and node 1 right. Each sends its encoder estimates every 10 ms and its heartbeat at least every 100 ms (the default). The firmware sets the controller mode, the limits and the axis state; it does not configure the cyclic messages. Set `can.config.baud_rate = 500000` explicitly: the default, 0, is autobaud, and the bot sends nothing until it hears a drive. With the watchdog on (`enable_watchdog`, `watchdog_timeout = 0.1`), a drive that stops getting torques idles its motor; the bot sends one every 10 ms, idle or not, so the drive's heartbeat reports `WATCHDOG_TIMER_EXPIRED` only until the bot is on the bus.
-2. **Nameplate:** weigh and measure the bot, and put the numbers in `bot::Nameplate` ([include/balance_controller.hpp](include/balance_controller.hpp)). The values marked "measure" are estimates. Then rerun the SIL: it checks the design on the new nameplate and holds it to ±20 % with every reading a period late.
+2. **Nameplate:** weigh and measure the bot, and put the numbers in `bot::Nameplate` ([include/balance_design.hpp](include/balance_design.hpp)). The values marked "measure" are estimates. Then rerun the SIL: it checks the design on the new nameplate and holds it to ±20 % with every reading a period late.
 3. **Pitch trim:** with `kPitchTrim = 0`, hold the bot at its balance point and read `pitch` off the telemetry. That reading is `kPitchTrim`. The position integrator would absorb the error anyway, but the trim keeps the engage window (5°) centred and the lean honest.
 
 ## Behaviour
@@ -87,7 +87,8 @@ On a board on USB; `pio test -e <board>` runs every test for it, `-f <test>` one
 
 | File | |
 | --- | --- |
-| [include/balance_controller.hpp](include/balance_controller.hpp) | nameplate, plant, design, the tick (`bot::Controller`): no Arduino |
+| [include/balance_design.hpp](include/balance_design.hpp) | nameplate, plants, weights, the compile-time designs: no Arduino |
+| [include/balance_controller.hpp](include/balance_controller.hpp) | limits and the tick (`bot::Controller`): no Arduino |
 | [src/main.cpp](src/main.cpp) | FreeRTOS tasks: control (CAN in, tick, CAN out) at 100 Hz, IMU at 1 kHz, telemetry |
 | [include/board.hpp](include/board.hpp) | per-board pins, I²C port, LEDs, FreeRTOS header |
 | [include/bot_can.hpp](include/bot_can.hpp), `can_*.hpp`, `ODriveEnums.h` | ODrive CAN simple protocol, heartbeat timeouts, per-board CAN driver calls |

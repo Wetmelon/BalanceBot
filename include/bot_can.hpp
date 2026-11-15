@@ -22,12 +22,19 @@ struct BotCanClass {
     /// [ms] A drive is gone after this long without a heartbeat (ODrive sends one every 100 ms by default).
     static constexpr uint32_t kHeartbeatTimeoutMs = 250;
 
-    void setup() {
+    /// The drives' own limits: Set_Limits, sent with every axis state request, never saved on them.
+    struct DriveLimits {
+        float velocity = 0.0f;  ///< [rev/s]
+        float current  = 0.0f;  ///< [A]
+    };
+
+    /// Nothing goes to the drives here: each frame waits for that drive's first heartbeat (send()).
+    void setup(const DriveLimits& limits) {
         for (ODriveArduinoCAN* m : {&left_motor, &right_motor}) {
             m->set_controller_mode_msg.Control_Mode = CONTROL_MODE_TORQUE_CONTROL;
             m->set_controller_mode_msg.Input_Mode   = INPUT_MODE_PASSTHROUGH;
-            m->set_limits_msg.Velocity_Limit        = 10.0f;  // [rev/s] 5 m/s: a runaway guard, past anything the bot asks
-            m->set_limits_msg.Current_Limit         = 16.0f;  // [A] BotWheel rating
+            m->set_limits_msg.Velocity_Limit        = limits.velocity;
+            m->set_limits_msg.Current_Limit         = limits.current;
         }
         left_motor.axis_id_  = 0;
         right_motor.axis_id_ = 1;

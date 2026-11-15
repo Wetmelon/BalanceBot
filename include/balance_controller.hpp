@@ -1,15 +1,9 @@
 /**
  * @file balance_controller.hpp
- * @brief BalanceBot deploy header: nameplate, plant, design and the control tick.
+ * @brief BalanceBot deploy header: the limits and the control tick.
  *
  * No Arduino here. main.cpp flashes it; sil/balance_sil.cpp closes the loop on the host around
- * the same objects. The plant is derived in docs/derivation.md.
- *
- * Two decoupled axes, each an LQI designed at compile time:
- *   pitch  x = [p, v, θ, ω], u = τ (sum of the wheel torques), integral on p: designed for
- *          the measured 22 ms delay, the law holds the last three torques sent
- *   yaw    x = [ψ, ψ̇],       u = Δτ (right minus left),      integral on ψ
- * The integrals hold the spot and the heading against a CoM offset, an IMU mount error or a slope.
+ * the same objects. The nameplate, plants, weights and designs are balance_design.hpp.
  */
 
 #pragma once
@@ -17,151 +11,37 @@
 #include <bit>
 #include <cstdint>
 
-#include "api/Common.h"
+#include "balance_design.hpp"
 #include "damp/controllers/lqi.hpp"
 #include "damp/filters/lowpass.hpp"
 #include "damp/math/geometry.hpp"
 #include "damp/math/math.hpp"
-#include "damp/matrix/concat.hpp"
 #include "damp/matrix/matrix.hpp"
-#include "damp/systems/discretization.hpp"
-#include "damp/systems/state_space.hpp"
 #include "damp/toolbox/iec61131.hpp"
 
 namespace bot {
 
 using damp::ColVec;
 
-/// Physical parameters. "measure" marks an estimate: weigh and swing the real bot, then rerun the SIL.
-///
-/// The pitch plane only sees three numbers (pitch_mass): the translating mass a, the body's mass
-/// moment b = m·l and its inertia about the axle c. Two are measured: b from the whole bot's CoM,
-/// 4.25 in above the axle (the BotWheels' mass sits on the axle, so b = 5.4 kg × 0.108 m), and c
-/// from a drop test, the free fall with the drives idle at λ = 3.66 rad/s:
-/// c = b²/a + b·g/λ². body_mass only splits b and c into com_height and body_inertia.
-struct Nameplate {
-    double wheel_radius  = 0.08255;  ///< [m] 6.5 in BotWheel
-    double track_width   = 0.400;    ///< [m] between the tire contact patches: 15.75 in
-    double com_height    = 0.666;    ///< [m] body CoM above the floor: r + b / body_mass
-    double body_mass     = 1.0;      ///< [kg] everything that pitches: 48 in extrusion, acrylic, battery (measure)
-    double body_inertia  = 0.134;    ///< [kg·m²] body about its own CoM, pitch axis: c − b² / body_mass
-    double wheel_mass    = 2.2;      ///< [kg] per side, what rides on the axle: BotWheel, per ODrive
-    double wheel_inertia = 0.006;    ///< [kg·m²] per side, the rotating part about the axle (measure)
-    double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical: the wheels at ±d/2 (measure)
-    double gravity       = 9.81;     ///< [m/s²]
-};
+inline constexpr float kWheelTorqueMax = 8.0f;  ///< [N·m] per wheel, the clamp on the law (traction alone holds about 2: μ ≈ 0.9 × m·g/2 × r)
 
-inline constexpr Nameplate kBot{};
-inline constexpr double    kTs = 0.01;  ///< [s] 100 Hz control period
+// The drives' own limits, a backstop under the clamp above: the controller never asks for more than
+// kWheelTorqueMax (about 8 A), so these only act if it misbehaves. Sent at each engage (bot_can.hpp).
+inline constexpr float kDriveVelocityLimit = 10.0f;  ///< [rev/s] 5.2 m/s: a runaway guard, past anything the bot asks
+inline constexpr float kDriveCurrentLimit  = 80.0f;  ///< [A] the S1's own maximum (config.inverter0.current_soft_max)
 
-inline constexpr float kWheelTorqueMax = 2.0f;    ///< [N·m] per wheel: traction, μ ≈ 0.9 × m·g/2 × r
-inline constexpr float kEngageTilt     = 0.087f;  ///< [rad] 5°: held this upright ...
-inline constexpr float kEngageTime     = 2.0f;    ///< [s] ... this long, the bot engages
-inline constexpr float kTipTilt        = 0.52f;   ///< [rad] 30°: past this it has fallen, motors off
-inline constexpr float kLeash          = 0.3f;    ///< [m] position error the reference may lag a push by
-inline constexpr float kYawLeash       = 0.5f;    ///< [rad] heading error the reference may lag by
-inline constexpr float kLeanMax        = 0.26f;   ///< [rad] 15°: the most lean position, speed and the integral may ask for
-inline constexpr float kIntegralLean   = 0.14f;   ///< [rad] 8° of it the integral may hold: a CoM offset, an IMU error, a slope
-inline constexpr float kCommandCutoff  = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
+inline constexpr float kEngageTilt    = 0.087f;  ///< [rad] 5°: held this upright ...
+inline constexpr float kEngageTime    = 2.0f;    ///< [s] ... this long, the bot engages
+inline constexpr float kTipTilt       = 0.52f;   ///< [rad] 30°: past this it has fallen, motors off
+inline constexpr float kLeash         = 0.3f;    ///< [m] position error the reference may lag a push by
+inline constexpr float kYawLeash      = 0.5f;    ///< [rad] heading error the reference may lag by
+inline constexpr float kLeanMax       = 0.26f;   ///< [rad] 15°: the most lean position, speed and the integral may ask for
+inline constexpr float kIntegralLean  = 0.14f;   ///< [rad] 8° of it the integral may hold: a CoM offset, an IMU error, a slope
+inline constexpr float kCommandCutoff = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
 
 /// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry,
 /// or fit the drop test's falls both ways (here: +0.004 rad).
 inline constexpr float kPitchTrim = 0.004f;
-
-/// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c] (docs/derivation.md).
-struct PitchMass {
-    double a = 0.0;  ///< [kg] translating mass, wheel inertia reflected through r
-    double b = 0.0;  ///< [kg·m] body mass × CoM height above the axle
-    double c = 0.0;  ///< [kg·m²] body pitch inertia about the axle
-};
-
-[[nodiscard]] constexpr PitchMass pitch_mass(const Nameplate& n) {
-    const double r = n.wheel_radius;
-    const double l = n.com_height - r;
-    return {
-        .a = n.body_mass + 2.0 * (n.wheel_mass + n.wheel_inertia / (r * r)),
-        .b = n.body_mass * l,
-        .c = n.body_inertia + n.body_mass * l * l,
-    };
-}
-
-/// [kg·m²] yaw inertia the differential torque sees: the body plus the wheels spinning up.
-[[nodiscard]] constexpr double yaw_inertia(const Nameplate& n) {
-    const double k = n.track_width / n.wheel_radius;
-    return n.yaw_inertia + n.wheel_inertia * k * k / 2.0;
-}
-
-/// Pitch plane linearized upright: x = [p, v, θ, ω], u = τ, y = p.
-[[nodiscard]] constexpr auto pitch_plant(const Nameplate& n) {
-    const auto [a, b, c] = pitch_mass(n);
-    const double r       = n.wheel_radius;
-    const double g       = n.gravity;
-    const double D       = a * c - b * b;
-    return damp::StateSpace<4, 1, 1>{
-        .A = {
-            {0.0, 1.0, 0.0, 0.0},
-            {0.0, 0.0, -b * b * g / D, 0.0},
-            {0.0, 0.0, 0.0, 1.0},
-            {0.0, 0.0, a * b * g / D, 0.0},
-        },
-        .B = {
-            {0.0},
-            {(c / r + b) / D},
-            {0.0},
-            {-(a + b / r) / D},
-        },
-        .C = {
-            {1.0, 0.0, 0.0, 0.0},
-        },
-    };
-}
-
-/// Yaw: x = [ψ, ψ̇], u = Δτ = τ_R − τ_L, y = ψ.
-[[nodiscard]] constexpr auto yaw_plant(const Nameplate& n) {
-    return damp::StateSpace<2, 1, 1>{
-        .A = {{0.0, 1.0}, {0.0, 0.0}},
-        .B = {{0.0}, {n.track_width / (2.0 * n.wheel_radius * yaw_inertia(n))}},
-        .C = {{1.0, 0.0}},
-    };
-}
-
-// Bryson weights, 1 / (acceptable excursion)², on the continuous cost; Van Loan samples it at Ts.
-// Pitch: the tall body falls at 3.66 rad/s and puts the non-minimum-phase zero of torque to position
-// at 3.3 rad/s, so position is slow. The torque penalty holds the margin the SIL asks for (±20 % on
-// the nameplate with every reading a period late); the weight on ω damps the ring the bot showed
-// after a push, which the model does not (docs/derivation.md). A failed design does not compile.
-constexpr double kPmax     = 0.02;                // [m]
-constexpr double kVmax     = 0.5;                 // [m/s]
-constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
-constexpr double kOmegaMax = 0.09;                // [rad/s]
-
-inline constexpr damp::design::LQRWeights<4, 1, 1> kPitchWeights{
-    .Q = damp::diag(
-        1.0 / sq(kPmax),
-        1.0 / sq(kVmax),
-        1.0 / sq(kThetaMax),
-        1.0 / sq(kOmegaMax)
-    ),                    // p 5 cm, v 0.5 m/s, θ 6°, ω 0.09 rad/s
-    .R          = 3.2,    // τ 0.56 N·m
-    .Q_integral = 200.0,  // ∫p 0.07 m·s
-};
-
-inline constexpr damp::design::LQRWeights<2, 1, 1> kYawWeights{
-    .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
-    .R          = 0.0625,                 // Δτ 4 N·m
-    .Q_integral = 25.0,                   // ∫ψ 0.2 rad·s
-};
-
-/// [s] torque command to IMU reading, measured on the bot (docs/derivation.md): CAN, the drives'
-/// current loop and the IMU together. The pitch law holds the torques still on their way in
-/// kDelayTicks registers.
-inline constexpr double kDelay      = 0.022;
-inline constexpr size_t kDelayTicks = 3;
-
-// Integral action on each plant's output y = C·x: p for pitch, ψ for yaw. The pitch design runs on
-// the plant with the torque arriving kDelay late, its cost discretized exactly on that model.
-inline constexpr auto kPitchDesign = damp::design::lqi(pitch_plant(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchWeights);
-inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
 
 /// Sensor readings, bot frame, forward positive.
 struct Measurement {
@@ -216,9 +96,9 @@ class Balancer {
 
     /// One period: update → control → clamp → back_calculate → predict.
     constexpr WheelTorques step(const Measurement& m, const Command& cmd) {
-        constexpr float r  = static_cast<float>(kBot.wheel_radius);
-        constexpr float d  = static_cast<float>(kBot.track_width);
-        constexpr float Ts = static_cast<float>(kTs);
+        constexpr float r  = (float)(kBot.wheel_radius);
+        constexpr float d  = (float)(kBot.track_width);
+        constexpr float Ts = (float)(kTs);
 
         const float p        = position(m);
         const float v        = r * (0.5f * (m.wheel_rate_r + m.wheel_rate_l) + m.pitch_rate);
@@ -236,10 +116,10 @@ class Balancer {
         // its reference (a wall, a hand) leans on until it falls. back_calculate sees the clamp, so the
         // integral stops winding against it.
         constexpr auto& K        = kPitchDesign.K;  // [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, ξ]
-        constexpr float k_p      = static_cast<float>(K(0, 0));
-        constexpr float k_v      = static_cast<float>(K(0, 1));
-        constexpr float k_th     = damp::abs(static_cast<float>(K(0, 2)));
-        constexpr float k_xi     = static_cast<float>(K(0, 7));
+        constexpr float k_p      = (float)(K(0, 0));
+        constexpr float k_v      = (float)(K(0, 1));
+        constexpr float k_th     = damp::abs((float)(K(0, 2)));
+        constexpr float k_xi     = (float)(K(0, 7));
         constexpr float xi_max   = k_th * kIntegralLean / damp::abs(k_xi);
         constexpr float lean_tau = k_th * kLeanMax;  // [N·m] the torque that asks for kLeanMax
         float&          xi       = pitch_.integral.xi(0);
@@ -272,19 +152,19 @@ class Balancer {
 
     /// [m] axle travel: the wheels' turn against the ground is the encoder plus the body's lean.
     [[nodiscard]] static constexpr float position(const Measurement& m) {
-        return static_cast<float>(kBot.wheel_radius) * (0.5f * (m.wheel_r + m.wheel_l) + m.pitch);
+        return (float)(kBot.wheel_radius) * (0.5f * (m.wheel_r + m.wheel_l) + m.pitch);
     }
 
     /// [rad] heading from odometry, counter-clockwise from above.
     [[nodiscard]] static constexpr float heading(const Measurement& m) {
-        return static_cast<float>(kBot.wheel_radius / kBot.track_width) * (m.wheel_r - m.wheel_l);
+        return (float)(kBot.wheel_radius / kBot.track_width) * (m.wheel_r - m.wheel_l);
     }
 
    private:
     damp::Law<kPitchDesign, float> pitch_{};
     damp::Law<kYawDesign, float>   yaw_{};
-    damp::LowPass<1, float>        speed_cmd_{kCommandCutoff, static_cast<float>(kTs)};
-    damp::LowPass<1, float>        yaw_cmd_{kCommandCutoff, static_cast<float>(kTs)};
+    damp::LowPass<1, float>        speed_cmd_{kCommandCutoff, (float)(kTs)};
+    damp::LowPass<1, float>        yaw_cmd_{kCommandCutoff, (float)(kTs)};
     float                          p_ref_   = 0.0f;
     float                          psi_ref_ = 0.0f;
 };
@@ -315,7 +195,7 @@ class Controller {
         const bool  drives = h.drives && finite(m);  // a reading that is not a number is a drive fault
         switch (mode_) {
             case Mode::Idle:
-                if (upright_(tilt < kEngageTilt && h.imu && drives, static_cast<float>(kTs))) {
+                if (upright_(tilt < kEngageTilt && h.imu && drives, (float)(kTs))) {
                     mode_ = Mode::Active;
                     balancer_.engage(m);
                 }

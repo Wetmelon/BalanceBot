@@ -21,8 +21,8 @@
 namespace {
 
 constexpr double kDeg       = 3.14159265358979323846 / 180.0;
-constexpr int    kSubsteps  = 10;                       // plant steps per control period
-constexpr double kSpread    = 0.2;                      // nameplate error the design must hold
+constexpr int    kSubsteps  = 10;                      // plant steps per control period
+constexpr double kSpread    = 0.2;                     // nameplate error the design must hold
 constexpr double kLateDelay = bot::kDelay + bot::kTs;  // [s] one period more than the design carries
 
 /// The nameplate off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
@@ -63,7 +63,7 @@ double delayed_loop_radius(const bot::Nameplate& n, double delay) {
 /// The plant as it is, which the design only estimates.
 struct Truth {
     bot::Nameplate n            = bot::kBot;
-    double         friction     = 0.05;   // [N·m·s/rad] per wheel, wheel against body
+    double         friction     = 0.05;         // [N·m·s/rad] per wheel, wheel against body
     double         pitch_offset = 0.0;          // [rad] the IMU reads this much more than the true lean
     double         delay        = bot::kDelay;  // [s] the torque reaches the wheels this late
 };
