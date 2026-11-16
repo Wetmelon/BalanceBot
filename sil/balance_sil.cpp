@@ -41,7 +41,7 @@ bot::Nameplate corner(unsigned c, double spread) {
 /// Spectral radius of the sampled pitch loop on plant n with the torque @p delay late (up to four
 /// periods), the gain the design's. The law reads x and the three torques it sent last:
 /// z = [x; τ₋₁ … τ₋₄; ξ], u = −K·[x; τ₋₁ … τ₋₃; ξ], ξ += −Ts·p.
-double delayed_loop_radius(const bot::Nameplate& n, double delay) {
+[[maybe_unused]] double delayed_loop_radius(const bot::Nameplate& n, double delay) {  // the LQI's
     const auto         d = damp::discretize(bot::pitch_plant(n), bot::kTs, damp::InputDelay<4>{delay}).value();
     const auto&        K = bot::kPitchDesign.K;  // [x, τ₋₁, τ₋₂, τ₋₃, ξ]
     damp::Matrix<9, 9> L{};
@@ -247,10 +247,14 @@ void scenario(const char* name, const Truth& truth) {
 
 int main() {
     // Output stays ASCII: PlatformIO echoes it through the Windows console code page.
+#if BOT_PITCH_LAW == 0
     std::printf("pitch K [p v theta omega tau-1 tau-2 tau-3 int_p]:");
     for (size_t i = 0; i < 8; ++i) {
         std::printf(" %+.3f", bot::kPitchDesign.K(0, i));
     }
+#else
+    std::printf("pitch law %d (1 OFLQG, 2 OFMPC)", BOT_PITCH_LAW);
+#endif
     std::printf("\nyaw   K [psi psi_rate int_psi]:   ");
     for (size_t i = 0; i < 3; ++i) {
         std::printf(" %+.3f", bot::kYawDesign.K(0, i));
@@ -286,6 +290,7 @@ int main() {
     scenario("plant 20 % off, IMU 2 deg off, torque 32 ms late", {.n = corner(0b0111U, kSpread), .pitch_offset = 2.0 * kDeg, .delay = kLateDelay});
 
     // A period on either side of the design's delay: the drives' current loop alone is ~10 ms of it.
+#if BOT_PITCH_LAW == 0
     std::printf("pitch loop on every corner of +-20 %%, torque 12 ms and 32 ms late\n");
     double worst = 0.0;
     for (unsigned c = 0; c < 16; ++c) {
@@ -294,6 +299,29 @@ int main() {
         }
     }
     check(worst < 1.0, "largest closed-loop |z|", worst);
+#endif
+
+    // The same corners on the nonlinear plant, which any law runs on: released at 2 deg, pushed, and
+    // the lean over the last second, which a loop on the edge still rings in.
+    std::printf("every corner of +-20 %%, torque 12 ms and 32 ms late: released at 2 deg, pushed\n");
+    int    fell = 0;
+    double ring = 0.0;
+    for (unsigned c = 0; c < 16; ++c) {
+        for (const double delay : {bot::kDelay - bot::kTs, kLateDelay}) {
+            Sim s{.plant = {.t = {.n = corner(c, kSpread), .delay = delay}}};
+            s.plant.th = 2.0 * kDeg;
+            s.run(5.0);
+            s.plant.push(0.5);
+            s.run(4.0);
+            for (int i = 0; i < 100; ++i) {
+                s.run(bot::kTs);
+                ring = std::fmax(ring, std::fabs(s.plant.th));
+            }
+            fell += s.out.mode == bot::Mode::Active ? 0 : 1;
+        }
+    }
+    check(fell == 0, "still up on all 32", fell);
+    check(ring < 1.0 * kDeg, "lean 4 s after the push, worst [deg]", ring / kDeg);
 
     if (failures == 0) {
         std::printf("all checks hold\n");
