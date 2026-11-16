@@ -48,9 +48,14 @@ struct Nameplate {
     double wheel_inertia = 0.006;    ///< [kg·m²] per side, the rotating part about the axle (measure)
     double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical: the wheels at ±d/2 (measure)
     double gravity       = 9.81;     ///< [m/s²]
+    double torque_gain   = 1.0;      ///< the fraction of the asked torque the motors deliver
 };
 
 inline constexpr Nameplate kBot{};
+
+/// The bot as identified above 2 Hz (docs/derivation.md): 0.88 of the asked torque, and 13.4 kg
+/// translating, as if each wheel had 0.027 kg·m² (friction the drive still has to move, most likely).
+inline constexpr Nameplate kBotFitted{.wheel_inertia = 0.027, .torque_gain = 0.88};
 inline constexpr double    kTs = 0.01;  ///< [s] 100 Hz control period
 
 /// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c] (docs/derivation.md).
@@ -91,9 +96,9 @@ struct PitchMass {
         },
         .B = {
             {0.0},
-            {(c / r + b) / D},
+            {n.torque_gain * (c / r + b) / D},
             {0.0},
-            {-(a + b / r) / D},
+            {-n.torque_gain * (a + b / r) / D},
         },
         .C = {
             {1.0, 0.0, 0.0, 0.0},
@@ -105,7 +110,7 @@ struct PitchMass {
 [[nodiscard]] constexpr auto yaw_plant(const Nameplate& n) {
     return damp::StateSpace<2, 1, 1>{
         .A = {{0.0, 1.0}, {0.0, 0.0}},
-        .B = {{0.0}, {n.track_width / (2.0 * n.wheel_radius * yaw_inertia(n))}},
+        .B = {{0.0}, {n.torque_gain * n.track_width / (2.0 * n.wheel_radius * yaw_inertia(n))}},
         .C = {{1.0, 0.0}},
     };
 }
@@ -199,7 +204,7 @@ inline constexpr damp::design::LQRConfig<4, 1> kPitchFilterCost{
 
 #if BOT_PITCH_LAW == 1
 inline constexpr auto kPitchOFLQG = damp::design::oflqg(
-    pitch_plant_read(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchFilterCost, kPitchNoise, pitch_disturbance(kBot)
+    pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchFilterCost, kPitchNoise, pitch_disturbance(kBotFitted)
 );
 #elif BOT_PITCH_LAW == 2
 // The OFMPC sees the pitch plane from a frame riding the speed command, y = [p − p_ref, v − speed, θ, ω],
@@ -208,7 +213,7 @@ inline constexpr auto kPitchOFLQG = damp::design::oflqg(
 // speed command a push may take it (the drives run out of voltage at 1.05 m/s on 19 V).
 inline constexpr size_t kHorizon      = 20;    ///< [steps] 0.2 s, the DARE's cost-to-go after it
 inline constexpr double kSpeedMargin  = 1.0;   ///< [m/s] the most the bot may run off the speed command
-inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
+inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
 
 /// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the registers.
 [[nodiscard]] constexpr auto pitch_disturbance_sampled(const Nameplate& n) {
@@ -247,7 +252,7 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBot),
     damp::design::KalmanNoise<4, 4, double, 2> noise = kPitchNoise;
     noise.process                                    = kPitchNoise.process * (1.0 / kTs);
     noise.disturbance                                = kPitchNoise.disturbance * kTs;
-    return damp::design::ofmpc<kHorizon, kHorizon>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBot));
+    return damp::design::ofmpc<kHorizon, kHorizon>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();
 #endif

@@ -3,7 +3,7 @@
 //   pio run -e sil -t exec
 //
 // One script (hold, engage, push, drive, turn, a wall, tip over) runs on the nominal plant with the torque
-// arriving the measured 22 ms late, then on a plant 20 % off the nameplate with a 2° IMU mount
+// arriving the measured 22 ms late, then on a plant 20 % off the fitted plant with a 2° IMU mount
 // error and the torque a period later still. Then the pitch loop, linearized, on all 16 corners
 // of ±20 % with that longer delay.
 // Exit code 0 when every check holds.
@@ -25,11 +25,11 @@ constexpr int    kSubsteps  = 10;                      // plant steps per contro
 constexpr double kSpread    = 0.2;                     // nameplate error the design must hold
 constexpr double kLateDelay = bot::kDelay + bot::kTs;  // [s] one period more than the design carries
 
-/// The nameplate off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
+/// The fitted plant (kBotFitted) off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
 /// axle and wheel inertia high (1) or low (0).
 bot::Nameplate corner(unsigned c, double spread) {
     const auto     f = [&](unsigned bit) { return ((c >> bit) & 1U) != 0U ? 1.0 + spread : 1.0 - spread; };
-    bot::Nameplate n = bot::kBot;
+    bot::Nameplate n = bot::kBotFitted;
     n.body_mass *= f(0);
     n.body_inertia *= f(1);
     n.com_height = n.wheel_radius + f(2) * (n.com_height - n.wheel_radius);
@@ -62,7 +62,7 @@ bot::Nameplate corner(unsigned c, double spread) {
 
 /// The plant as it is, which the design only estimates.
 struct Truth {
-    bot::Nameplate n            = bot::kBot;
+    bot::Nameplate n            = bot::kBotFitted;
     double         friction     = 0.05;         // [N·m·s/rad] per wheel, wheel against body
     double         pitch_offset = 0.0;          // [rad] the IMU reads this much more than the true lean
     double         delay        = bot::kDelay;  // [s] the torque reaches the wheels this late
@@ -82,8 +82,8 @@ struct Plant {
         const auto [a, b, c] = bot::pitch_mass(t.n);
         const double r       = t.n.wheel_radius;
         const double half    = 0.5 * t.n.track_width;
-        const double tau_r   = static_cast<double>(u.right) - t.friction * ((v_ + half * psi_rate_) / r - w_);
-        const double tau_l   = static_cast<double>(u.left) - t.friction * ((v_ - half * psi_rate_) / r - w_);
+        const double tau_r   = t.n.torque_gain * static_cast<double>(u.right) - t.friction * ((v_ + half * psi_rate_) / r - w_);
+        const double tau_l   = t.n.torque_gain * static_cast<double>(u.left) - t.friction * ((v_ - half * psi_rate_) / r - w_);
         const double tau     = tau_r + tau_l;
         const double cs = std::cos(th_), sn = std::sin(th_);
         const double f1  = tau / r + b * sn * w_ * w_;
