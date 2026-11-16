@@ -120,7 +120,7 @@ constexpr double kVmax     = 0.5;                 // [m/s]
 constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
 constexpr double kOmegaMax = 0.09;                // [rad/s]
 
-inline constexpr damp::design::LQRConfig<4, 1, 1> kPitchWeights{
+inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
     .Q = damp::diag(
         1.0 / square(kPmax),
         1.0 / square(kVmax),
@@ -131,7 +131,7 @@ inline constexpr damp::design::LQRConfig<4, 1, 1> kPitchWeights{
     .Q_integral = 200.0,  // ∫p 0.07 m·s
 };
 
-inline constexpr damp::design::LQRConfig<2, 1, 1> kYawWeights{
+inline constexpr damp::design::LQIConfig<2, 1, 1> kYawWeights{
     .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
     .R          = 0.0625,                 // Δτ 4 N·m
     .Q_integral = 25.0,                   // ∫ψ 0.2 rad·s

@@ -35,7 +35,10 @@ inline constexpr float kLeash         = 0.3f;    ///< [m] position error the ref
 inline constexpr float kYawLeash      = 0.5f;    ///< [rad] heading error the reference may lag by
 inline constexpr float kIntegralLean  = 0.14f;   ///< [rad] 8° of it the integral may hold: a CoM offset, an IMU error, a slope
 inline constexpr float kCommandCutoff = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
-inline constexpr float kDisturbanceMax[2] = {2.0f, kIntegralLean};  ///< [N·m, rad] the most of each d̂ the OFLQG or OFMPC holds
+
+/// [N·m, rad] the most of each d̂ the OFLQG or OFMPC holds. A wall or a hand the bot leans on reads as a
+/// disturbance, which the target then leans on harder until the bot falls; as the LQI's integral is held.
+inline constexpr damp::Bounds<2, float> kDisturbanceLim{.lower = {-2.0f, -kIntegralLean}, .upper = {2.0f, kIntegralLean}};
 
 /// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry,
 /// or fit the drop test's falls both ways (here: +0.004 rad).
@@ -86,6 +89,7 @@ class Balancer {
     constexpr void engage(const Measurement& m) {
         pitch_.reset();
 #if BOT_PITCH_LAW != 0
+        pitch_.disturbance_lim = kDisturbanceLim;
         restart(filter(), m.pitch);
         p0_ = position(m);
 #endif
@@ -117,7 +121,6 @@ class Balancer {
         // The target holds p on the reference point (p_ref, speed) under the filter's d̂; the leash bounds
         // what that asks.
         pitch_.update({p - p0_, v, m.pitch, m.pitch_rate});
-        hold_disturbance(filter());
         yaw_.update({psi, psi_rate});
         const float tau  = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);  // r: p off the reference point
         const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
@@ -125,7 +128,6 @@ class Balancer {
         // In the frame riding the speed command, a standstill on the reference: the target under d̂ is
         // the CoM's upright, θ = d̂₁, and the torque that cancels d̂₀.
         pitch_.update({p - p_ref_, v - speed, m.pitch, m.pitch_rate});
-        hold_disturbance(filter());
         yaw_.update({psi, psi_rate});
         const auto d_hat = pitch_.disturbance_estimate();
         pitch_.set_input_target(ColVec<1, float>{-d_hat(0)});
@@ -192,9 +194,8 @@ class Balancer {
     constexpr Filter& filter() { return pitch_.estimator; }
 #else
     damp::Law<kPitchOFMPC, float> pitch_{};
-    // ponytail: Damp's MPC hands out its filter const only; a mutable estimator() if this law stays.
     using Filter = damp::remove_cvref_t<decltype(pitch_.estimator())>;
-    constexpr Filter& filter() { return const_cast<Filter&>(pitch_.estimator()); }
+    constexpr Filter& filter() { return pitch_.estimator(); }
 #endif
     float p0_ = 0.0f;  ///< [m] where it engaged: the OFLQG's p is from here
 
@@ -212,16 +213,6 @@ class Balancer {
             x(7 + i) = -f.anchor_disturbance()(i);
         }
         f.reset(x);
-    }
-
-    /// A wall or a hand the bot leans on reads as a disturbance, which the target then leans on harder
-    /// until the bot falls: d̂ holds at most kDisturbanceMax, as the LQI's integral does.
-    template <typename F>
-    static constexpr void hold_disturbance(F& f) {
-        const auto d_hat = f.disturbance_estimate();
-        for (size_t i = 0; i < 2; ++i) {
-            f.set_state(7 + i, f.state()(7 + i) + damp::clamp(d_hat(i), -kDisturbanceMax[i], kDisturbanceMax[i]) - d_hat(i));
-        }
     }
 #endif
     damp::Law<kYawDesign, float>   yaw_{};
