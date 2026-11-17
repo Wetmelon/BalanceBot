@@ -25,6 +25,15 @@ static constexpr float    kTwoPi    = 2.0f * damp::numbers::pi_v<float>;
 static constexpr uint32_t kPeriodMs = 10;
 static TaskHandle_t       control_task = nullptr;  // the IMU task wakes it on each gyro report
 
+// [words] The control task's stack. The OFMPC's QP solve takes about 13.4 KB of it (-fstack-usage:
+// the MPC's control 6.3 KB, the active-set solver 6.1 KB); 4 KB overflowed it and faulted the CPU on
+// the first active tick. The tasks' stacks come out of FreeRTOS's 32 KB heap on the C33.
+#if BOT_PITCH_LAW == 2
+static constexpr uint32_t kControlStack = 4096;
+#else
+static constexpr uint32_t kControlStack = 1024;
+#endif
+
 // ODrive reports the rotor against the stator, in turns: the wheel against the body. The left
 // motor is mirrored, so forward is negative turns on it.
 static bot::Measurement measure(const ImuWrapper::Sample& s) {
@@ -157,9 +166,12 @@ void setup() {
     pinMode(board::kFaultPin, OUTPUT);
     board::setupLeds();
 
-    xTaskCreate(controlTask, "control", 1024, nullptr, tskIDLE_PRIORITY + 3, &control_task);
-    xTaskCreate(imuTask, "imu", 1024, nullptr, tskIDLE_PRIORITY + 2, nullptr);
-    xTaskCreate(telemetryTask, "telemetry", 1024, nullptr, tskIDLE_PRIORITY + 1, nullptr);
+    const bool tasks = xTaskCreate(controlTask, "control", kControlStack, nullptr, tskIDLE_PRIORITY + 3, &control_task) == pdPASS &&
+                       xTaskCreate(imuTask, "imu", 1024, nullptr, tskIDLE_PRIORITY + 2, nullptr) == pdPASS &&
+                       xTaskCreate(telemetryTask, "telemetry", 1024, nullptr, tskIDLE_PRIORITY + 1, nullptr) == pdPASS;
+    for (; !tasks; delay(1000)) {  // the FreeRTOS heap is too small for the stacks: nothing runs the drives
+        Serial.println("No room for the tasks' stacks!");
+    }
 
     Serial.println("Starting Scheduler");
     Serial.flush();
