@@ -114,11 +114,14 @@ struct PitchMass {
 // Pitch: the tall body falls at 3.66 rad/s and puts the non-minimum-phase zero of torque to position
 // at 3.3 rad/s, so position is slow. The torque penalty holds the margin the SIL asks for (±20 % on
 // the nameplate with every reading a period late); the weight on ω damps the ring the bot showed
-// after a push, which the model does not (docs/derivation.md). A failed design does not compile.
+// after a push, which the model does not (docs/derivation.md). ω, R and the integral are set by the
+// SIL's far corner, which must both hold the spot within 5 cm and ring under 1° 4 s after a push:
+// ω 0.09 rad/s, R 3.2 and ∫p 200 (flown until 2026-11-16) did one or the other, not both. A failed
+// design does not compile.
 constexpr double kPmax     = 0.02;                // [m]
 constexpr double kVmax     = 0.5;                 // [m/s]
 constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
-constexpr double kOmegaMax = 0.09;                // [rad/s]
+constexpr double kOmegaMax = 0.12;                // [rad/s]
 
 inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
     .Q = damp::diag(
@@ -126,9 +129,9 @@ inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
         1.0 / square(kVmax),
         1.0 / square(kThetaMax),
         1.0 / square(kOmegaMax)
-    ),                    // p 5 cm, v 0.5 m/s, θ 6°, ω 0.09 rad/s
-    .R          = 3.2,    // τ 0.56 N·m
-    .Q_integral = 200.0,  // ∫p 0.07 m·s
+    ),                    // p 2 cm, v 0.5 m/s, θ 6°, ω 0.12 rad/s
+    .R          = 1.5,    // τ 0.82 N·m
+    .Q_integral = 350.0,  // ∫p 0.053 m·s
 };
 
 inline constexpr damp::design::LQIConfig<2, 1, 1> kYawWeights{
@@ -184,9 +187,19 @@ inline constexpr damp::design::KalmanNoise<4, 4, double, 2> kPitchNoise{
     .disturbance = damp::diag(square(0.3), square(0.01)),                                // 0.3 N·m, 0.6° in a second: faster rings the far corners
 };
 
+/// The OFLQG's and OFMPC's cost: the LQI's weights before its retune (ω 0.09 rad/s, R 3.2), with
+/// which both hold every SIL check; on the LQI's new ones they ring 3° 4 s after a push. demand_lim
+/// (the OFLQG's) caps the lean p and v ask for at kLeanMax, as the LQI's hand clamp does: without
+/// it a bot pushed along a metre leans back past kTipTilt to return and cuts out.
+inline constexpr damp::design::LQRConfig<4, 1> kPitchFilterCost{
+    .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.09)),
+    .R          = 3.2,
+    .demand_lim = {.state = 2, .outer = {true, true, false, false}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
+};
+
 #if BOT_PITCH_LAW == 1
 inline constexpr auto kPitchOFLQG = damp::design::oflqg(
-    pitch_plant_read(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, {.Q = kPitchWeights.Q, .R = kPitchWeights.R}, kPitchNoise, pitch_disturbance(kBot)
+    pitch_plant_read(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchFilterCost, kPitchNoise, pitch_disturbance(kBot)
 );
 #elif BOT_PITCH_LAW == 2
 // The OFMPC sees the pitch plane from a frame riding the speed command, y = [p − p_ref, v − speed, θ, ω],
@@ -210,7 +223,7 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBot),
     return d;
 }
 
-/// The QP weighs signals scaled by each limit's range (1 for an unbounded one): the LQI's Q and R,
+/// The QP weighs signals scaled by each limit's range (1 for an unbounded one): kPitchFilterCost's Q and R,
 /// per step, scaled to match.
 [[nodiscard]] constexpr auto pitch_mpc_design() {
     constexpr double big = damp::numeric_limits<double>::max();  // no limit
@@ -220,10 +233,10 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBot),
 
     damp::design::MPCWeights<1, 4> w{};
     for (size_t i = 0; i < 4; ++i) {
-        w.Qy(i, i) = kPitchWeights.Q(i, i) * kTs * square(s[i]);
+        w.Qy(i, i) = kPitchFilterCost.Q(i, i) * kTs * square(s[i]);
     }
     w.Qy_terminal = w.Qy;
-    w.Ru          = kPitchWeights.R * (kTs * square(s_u));
+    w.Ru          = kPitchFilterCost.R * (kTs * square(s_u));
     w.Rdu         = damp::Matrix<1, 1>{1e-4 * square(s_u)};  // [per (N·m)²] a little on each step, which the QP needs
 
     damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost};

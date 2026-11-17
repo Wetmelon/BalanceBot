@@ -243,6 +243,23 @@ void scenario(const char* name, const Truth& truth) {
     check(s.out.mode == bot::Mode::Idle && s.out.torque.right == 0.0f, "shoved over: motors off [deg]", s.plant.th / kDeg);
 }
 
+/// Pushed along by a hand at the CoM for a second, then let go: the bot must catch itself. The law
+/// asks for a lean to go back; uncapped, it leans past kTipTilt and cuts out.
+void pushed_along(const char* what, const Truth& truth, double force) {
+    Sim s{.plant = {.t = truth}};
+    s.run(2.1);  // engaged upright
+    s.run(2.0);
+    double peak = 0.0;
+    for (int i = 0; i < 100 + 500 && s.out.mode == bot::Mode::Active; ++i) {
+        if (i < 100) {
+            s.plant.push(force * bot::kTs);
+        }
+        s.run(bot::kTs);
+        peak = std::fmax(peak, std::fabs(s.plant.th));
+    }
+    check(s.out.mode == bot::Mode::Active, what, peak / kDeg);
+}
+
 }  // namespace
 
 int main() {
@@ -322,6 +339,10 @@ int main() {
     }
     check(fell == 0, "still up on all 32", fell);
     check(ring < 1.0 * kDeg, "lean 4 s after the push, worst [deg]", ring / kDeg);
+
+    std::printf("pushed along at 4 N for 1 s (about a metre), then let go\n");
+    pushed_along("nominal: still up, peak lean [deg]", {}, 4.0);
+    pushed_along("20 % off, IMU 2 deg off, 32 ms: still up, peak lean [deg]", {.n = corner(0b0111U, kSpread), .pitch_offset = 2.0 * kDeg, .delay = kLateDelay}, 4.0);
 
     if (failures == 0) {
         std::printf("all checks hold\n");
