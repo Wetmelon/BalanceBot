@@ -189,15 +189,17 @@ inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYa
 inline constexpr damp::design::KalmanNoise<4, 4, double, 2> kPitchNoise{
     .process     = damp::diag(1e-6, 1e-2, 1e-6, 1e-1),
     .measurement = damp::diag(square(1e-4), square(5e-3), square(1e-3), square(5e-3)),  // p 0.1 mm, v 5 mm/s, θ 1 mrad, ω 5 mrad/s
-    .disturbance = damp::diag(square(0.3), square(0.01)),                                // 0.3 N·m, 0.6° in a second: faster rings the far corners
+    .disturbance = damp::diag(square(0.3), square(0.02)),                                // 0.3 N·m, 1.1° in a second: d̂₁ settles in τ ≈ 2 s
 };
 
-/// The OFLQG's and OFMPC's cost: the LQI's weights before its retune (ω 0.09 rad/s, R 3.2), with
-/// which both hold every SIL check; on the LQI's new ones they ring 3° 4 s after a push. demand_lim
+/// The OFLQG's and OFMPC's cost: the LQI's p, v and θ weights, R 3.2, and ω 0.05 rad/s, which damps
+/// the loop's 1 Hz mode. Its closed-loop modes (to_ss on the fitted plant, every ±20 % corner, 12 to
+/// 32 ms late) are damped at least ζ 0.33; with ω 0.09 one rang at ζ 0.11, the floor's slow settling.
+/// demand_lim
 /// (the OFLQG's) caps the lean p and v ask for at kLeanMax, as the LQI's hand clamp does: without
 /// it a bot pushed along a metre leans back past kTipTilt to return and cuts out.
 inline constexpr damp::design::LQRConfig<4, 1> kPitchFilterCost{
-    .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.09)),
+    .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.05)),
     .R          = 3.2,
     .demand_lim = {.state = 2, .outer = {true, true, false, false}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
 };
