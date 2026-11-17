@@ -158,7 +158,7 @@ class Balancer {
         // Read as a cascade, u = −K_θ·(θ − θ_c) − …: the lean θ_c is what p, v and the integral ask for.
         // The integral holds at most kIntegralLean of it and θ_c at most kLeanMax, or a bot held off
         // its reference (a wall, a hand) leans on until it falls. back_calculate sees the clamp, so the
-        // integral unwinds against it (kPitchWeights.tracking_time).
+        // integral stops winding against it.
         constexpr auto& K        = kPitchDesign.K;  // [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, ξ]
         constexpr float k_p      = (float)(K(0, 0));
         constexpr float k_v      = (float)(K(0, 1));

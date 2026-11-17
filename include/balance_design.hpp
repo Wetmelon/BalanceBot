@@ -136,8 +136,7 @@ inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
         1.0 / square(kOmegaMax)
     ),                    // p 2 cm, v 0.5 m/s, θ 6°, ω 0.12 rad/s
     .R          = 1.5,    // τ 0.82 N·m
-    .Q_integral    = 350.0,  // ∫p 0.053 m·s
-    .tracking_time = 0.5,    // [s] unwind against a clamp: the SIL's ring as Damp 0.2's hold, a lower push-along lean (Damp's 0: 1.5x the ring)
+    .Q_integral = 350.0,  // ∫p 0.053 m·s
 };
 
 inline constexpr damp::design::LQIConfig<2, 1, 1> kYawWeights{
