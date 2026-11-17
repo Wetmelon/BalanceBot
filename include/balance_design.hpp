@@ -213,7 +213,18 @@ inline constexpr auto kPitchOFLQG = damp::design::oflqg(
 // so it regulates to a standstill: the plant is the same at any constant speed. It has the LQI's cost
 // per step, and as constraints what the LQI gets from clamps: the torque, the lean, and how far off the
 // speed command a push may take it (the drives run out of voltage at 1.05 m/s on 19 V).
-inline constexpr size_t kHorizon      = 20;    ///< [steps] 0.2 s, the DARE's cost-to-go after it
+// The horizons and the QP's iteration budget, overridable from the build for timing them on the board.
+#ifndef BOT_MPC_NP
+#define BOT_MPC_NP 10
+#endif
+#ifndef BOT_MPC_NC
+#define BOT_MPC_NC 5
+#endif
+#ifndef BOT_MPC_ITERATIONS
+#define BOT_MPC_ITERATIONS 40  // 0 is Damp's default, 10·(NZ + 1 + NI + 1) = 1070: about 50 ms on the C33 if used up. 40 is ~2.1 ms; a push takes 10
+#endif
+inline constexpr size_t kHorizon      = BOT_MPC_NP;  ///< [steps] 0.1 s, the DARE's cost-to-go after it: 20 cost 12x the QP on a push (host)
+inline constexpr size_t kMoves        = BOT_MPC_NC;  ///< [steps] the moves the QP chooses; the last holds to the horizon
 inline constexpr double kSpeedMargin  = 1.0;   ///< [m/s] the most the bot may run off the speed command
 inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
 
@@ -244,9 +255,13 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFi
     }
     w.Qy_terminal = w.Qy;
     w.Ru          = kPitchFilterCost.R * (kTs * square(s_u));
-    w.Rdu         = damp::Matrix<1, 1>{1e-4 * square(s_u)};  // [per (N·m)²] a little on each step, which the QP needs
+    // [per (N·m)²] on each torque step. 1e-4 of it let the QP jump the torque from tick to tick while the
+    // lean limit held, which the bot did as a buzz: in the SIL a push at 4 N reversed the torque's step
+    // 18 times in 4 s on the far corner, mean |Δ²τ| 0.54 N·m. 0.3 (the floor's pick) gives 0.05 and still
+    // holds the lean limit; it recovers a little slower, so the SIL's ring limit is 1.2° for this law.
+    w.Rdu         = damp::Matrix<1, 1>{0.3 * square(s_u)};
 
-    damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost};
+    damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost, .max_qp_iterations = BOT_MPC_ITERATIONS};
     c.u_lim = {.lower = {-tau}, .upper = {tau}};
     c.y_lim = {.lower = {-big, -kSpeedMargin, -lean, -big}, .upper = {big, kSpeedMargin, lean, big}};
 
@@ -254,7 +269,7 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFi
     damp::design::KalmanNoise<4, 4, double, 2> noise = kPitchNoise;
     noise.process                                    = kPitchNoise.process * (1.0 / kTs);
     noise.disturbance                                = kPitchNoise.disturbance * kTs;
-    return damp::design::ofmpc<kHorizon, kHorizon>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
+    return damp::design::ofmpc<kHorizon, kMoves>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();
 #endif

@@ -82,6 +82,27 @@ struct WheelTorques {
     return q.to_euler().roll() - damp::numbers::pi_v<float> / 2.0f - kPitchTrim;
 }
 
+#if BOT_PITCH_LAW == 2
+// BOT_MPC_SOLVER picks the OFMPC's QP solver, for timing them on the board: 0 the warm-started active
+// set (Law's), 1 ADMM, 2 interior point. The same law on the design's constants, its solver swapped.
+#ifndef BOT_MPC_SOLVER
+#define BOT_MPC_SOLVER 0
+#endif
+template <typename L>
+struct with_solver;
+template <size_t NX, size_t NU, size_t NY, size_t NP, size_t NC, typename T, size_t NV, size_t NI, size_t NT, typename E, size_t NXC>
+struct with_solver<damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::WarmStartActiveSetSolver<NV, NI, T>, NT, E, NXC>> {
+#if BOT_MPC_SOLVER == 1
+    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::AdmmSolver<NV, NI, T>, NT, E, NXC>;
+#elif BOT_MPC_SOLVER == 2
+    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::InteriorPointSolver, NT, E, NXC>;
+#else
+    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::WarmStartActiveSetSolver<NV, NI, T>, NT, E, NXC>;
+#endif
+};
+using PitchMPC = with_solver<damp::Law<kPitchOFMPC, float>::Base>::type;
+#endif
+
 /// The two LQIs, the command filters and the references they track.
 class Balancer {
    public:
@@ -179,6 +200,15 @@ class Balancer {
         return (float)(kBot.wheel_radius) * (0.5f * (m.wheel_r + m.wheel_l) + m.pitch);
     }
 
+    /// The pitch OFMPC's QP iterations on the last tick (0 for the other laws).
+    [[nodiscard]] constexpr size_t qp_iterations() const {
+#if BOT_PITCH_LAW == 2
+        return pitch_.last_iterations();
+#else
+        return 0;
+#endif
+    }
+
     /// [rad] heading from odometry, counter-clockwise from above.
     [[nodiscard]] static constexpr float heading(const Measurement& m) {
         return (float)(kBot.wheel_radius / kBot.track_width) * (m.wheel_r - m.wheel_l);
@@ -193,7 +223,7 @@ class Balancer {
     using Filter = decltype(pitch_.estimator);
     constexpr Filter& filter() { return pitch_.estimator; }
 #else
-    damp::Law<kPitchOFMPC, float> pitch_{};
+    PitchMPC pitch_{kPitchOFMPC.template as<float>()};
     using Filter = damp::remove_cvref_t<decltype(pitch_.estimator())>;
     constexpr Filter& filter() { return pitch_.estimator(); }
 #endif
@@ -268,6 +298,9 @@ class Controller {
     }
 
     [[nodiscard]] constexpr Mode mode() const { return mode_; }
+
+    /// The pitch OFMPC's QP iterations on the last tick (0 for the other laws).
+    [[nodiscard]] constexpr size_t qp_iterations() const { return balancer_.qp_iterations(); }
 
    private:
     Mode                  mode_ = Mode::Idle;

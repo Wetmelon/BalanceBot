@@ -20,6 +20,8 @@ ImuWrapper  imu;
 static constinit bot::Controller controller;
 static bot::Measurement          last_measurement;  // telemetry copies; a torn read only misprints
 static bot::Output               last_output;
+static volatile uint32_t         tick_cycles_max   = 0;  // the slowest Controller::tick since the last telemetry line
+static volatile uint32_t         qp_iterations_max = 0;  // the most OFMPC QP iterations in a tick since then
 
 static constexpr float    kTwoPi    = 2.0f * damp::numbers::pi_v<float>;
 static constexpr uint32_t kPeriodMs = 10;
@@ -103,7 +105,12 @@ static void controlTask(void*) {
         bot_can.read(kPeriodMs);
         const ImuWrapper::Sample s   = imu.latest();
         const bot::Measurement   m   = measure(s);
+        const uint32_t           t0  = DWT->CYCCNT;
         bot::Output              out = controller.tick(m, {.imu = s.fresh, .drives = bot_can.healthy()}, {});
+        const uint32_t           dt  = DWT->CYCCNT - t0;
+        tick_cycles_max              = dt > tick_cycles_max ? dt : tick_cycles_max;  // ponytail: racing telemetry's reset loses one tick at most
+        const uint32_t           it  = controller.qp_iterations();
+        qp_iterations_max            = it > qp_iterations_max ? it : qp_iterations_max;
 
         // ponytail: past the 2 N·m traction clamp by at most kExcitation / 2; the drives allow far more
         const float excite = (out.mode == bot::Mode::Active) ? excitation() : 0.0f;
@@ -153,7 +160,13 @@ static void telemetryTask(void*) {
         Serial.print(' ');
         Serial.print(o.torque.left, 2);
         Serial.print("\todrive ");
-        Serial.println(bot_can.healthy() ? "ok" : "missing or faulted");
+        Serial.print(bot_can.healthy() ? "ok" : "missing or faulted");
+        Serial.print("\ttick_us ");  // the slowest tick in the last 100 ms
+        Serial.print(static_cast<float>(tick_cycles_max) / (static_cast<float>(SystemCoreClock) / 1e6f), 1);
+        tick_cycles_max = 0;
+        Serial.print("\tqp_it ");
+        Serial.println(qp_iterations_max);
+        qp_iterations_max = 0;
     }
 }
 
@@ -164,6 +177,9 @@ void setup() {
         delay(1);
     }
     pinMode(board::kFaultPin, OUTPUT);
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;  // the cycle counter, for tick_us
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     board::setupLeds();
 
     const bool tasks = xTaskCreate(controlTask, "control", kControlStack, nullptr, tskIDLE_PRIORITY + 3, &control_task) == pdPASS &&
