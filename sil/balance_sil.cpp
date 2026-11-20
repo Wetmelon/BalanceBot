@@ -1,12 +1,7 @@
-// Host SIL: the nonlinear plant around the bot::Controller that main.cpp flashes.
+// Host SIL: the nonlinear plant around the bot::Controller that main.cpp flashes. Exits 0 when every
+// check holds.
 //
 //   pio run -e sil -t exec
-//
-// One script (hold, engage, push, drive, turn, a wall, tip over) runs on the nominal plant with the torque
-// arriving the measured 22 ms late, then on a plant 20 % off the fitted plant with a 2° IMU mount
-// error and the torque a period later still. Then the pitch loop, linearized, on all 16 corners
-// of ±20 % with that longer delay.
-// Exit code 0 when every check holds.
 
 #include <cmath>
 #include <complex>

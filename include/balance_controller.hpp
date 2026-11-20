@@ -1,10 +1,5 @@
-/**
- * @file balance_controller.hpp
- * @brief BalanceBot deploy header: the limits and the control tick.
- *
- * No Arduino here. main.cpp flashes it; sil/balance_sil.cpp closes the loop on the host around
- * the same objects. The nameplate, plants, weights and designs are balance_design.hpp.
- */
+// BalanceBot's limits and control tick. No Arduino: main.cpp flashes it, sil/balance_sil.cpp runs it on
+// the host. The plants and designs are in balance_design.hpp.
 
 #pragma once
 
@@ -23,40 +18,36 @@ namespace bot {
 
 using damp::ColVec;
 
-// The drives' own limits, a backstop under the clamp above: the controller never asks for more than
-// kWheelTorqueMax (about 8 A), so these only act if it misbehaves. Sent at each engage (bot_can.hpp).
-inline constexpr float kDriveVelocityLimit = 10.0f;  ///< [rev/s] 5.2 m/s: a runaway guard, past anything the bot asks
-inline constexpr float kDriveCurrentLimit  = 80.0f;  ///< [A] the S1's own maximum (config.inverter0.current_soft_max)
+// The drives' own limits, sent at each engage: a backstop, the law never asks past kWheelTorqueMax.
+inline constexpr float kDriveVelocityLimit = 10.0f;  ///< [rev/s] 5.2 m/s
+inline constexpr float kDriveCurrentLimit  = 80.0f;  ///< [A] the S1's maximum
 
 inline constexpr float kEngageTilt    = 0.087f;  ///< [rad] 5°: held this upright ...
 inline constexpr float kEngageTime    = 2.0f;    ///< [s] ... this long, the bot engages
 inline constexpr float kTipTilt       = 0.52f;   ///< [rad] 30°: past this it has fallen, motors off
 inline constexpr float kLeash         = 0.3f;    ///< [m] position error the reference may lag a push by
 inline constexpr float kYawLeash      = 0.5f;    ///< [rad] heading error the reference may lag by
-inline constexpr float kIntegralLean  = 0.14f;   ///< [rad] 8° of it the integral may hold: a CoM offset, an IMU error, a slope
+inline constexpr float kIntegralLean  = 0.14f;   ///< [rad] 8°: the most lean the integral may hold
 inline constexpr float kCommandCutoff = 0.5f;    ///< [Hz] low-pass on the speed and yaw-rate commands
 
-/// [N·m, rad] the most of each d̂ the OFLQG or OFMPC holds. A wall or a hand the bot leans on reads as a
-/// disturbance, which the target then leans on harder until the bot falls; as the LQI's integral is held.
+/// [N·m, rad] the most d̂ the OFLQG or OFMPC holds: past it, a wall reads as a disturbance to lean on.
 inline constexpr damp::Bounds<2, float> kDisturbanceLim{.lower = {-2.0f, -kIntegralLean}, .upper = {2.0f, kIntegralLean}};
 
-/// [rad] IMU pitch reading with the CoM over the axle. Calibrate: balance it by hand, read the telemetry,
-/// or fit the drop test's falls both ways (here: +0.004 rad).
+/// [rad] IMU pitch with the CoM over the axle: balance the bot by hand and read the telemetry.
 inline constexpr float kPitchTrim = 0.004f;
 
 /// Sensor readings, bot frame, forward positive.
 struct Measurement {
-    float pitch        = 0.0f;  ///< [rad] lean, forward positive
+    float pitch        = 0.0f;  ///< [rad]
     float pitch_rate   = 0.0f;  ///< [rad/s]
-    float wheel_r      = 0.0f;  ///< [rad] right wheel against the body (the motor encoder)
+    float wheel_r      = 0.0f;  ///< [rad] right wheel against the body
     float wheel_l      = 0.0f;  ///< [rad] left wheel against the body
     float wheel_rate_r = 0.0f;  ///< [rad/s]
     float wheel_rate_l = 0.0f;  ///< [rad/s]
 };
 
-/// Every reading a number. A drive with no position to report (absolute setpoints on and no index,
-/// for one) sends NaN, and a NaN state makes the law ask for full torque. Checked on the bits:
-/// -ffast-math lets the compiler assume a float is never NaN and drop a comparison that tests it.
+/// No NaN or inf in any reading: a drive with no position sends NaN, and the law turns it into full
+/// torque. Checked on the bits because -ffast-math folds isnan away.
 [[nodiscard]] constexpr bool finite(const Measurement& m) {
     for (const float v : {m.pitch, m.pitch_rate, m.wheel_r, m.wheel_l, m.wheel_rate_r, m.wheel_rate_l}) {
         if ((std::bit_cast<uint32_t>(v) & 0x7F800000U) == 0x7F800000U) {
@@ -76,34 +67,12 @@ struct WheelTorques {
     float left  = 0.0f;  ///< [N·m] forward positive
 };
 
-/// Lean from the IMU's game rotation vector. The IMU is mounted on its side: its x axis is the pitch
-/// axis and it reads a roll of +90° upright. Its gyro x is the pitch rate.
+/// Lean from the game rotation vector. The IMU is on its side: x is the pitch axis, roll is +90° upright.
 [[nodiscard]] constexpr float pitch_from_imu(const damp::Quaternion<float>& q) {
     return q.to_euler().roll() - damp::numbers::pi_v<float> / 2.0f - kPitchTrim;
 }
 
-#if BOT_PITCH_LAW == 2
-// BOT_MPC_SOLVER picks the OFMPC's QP solver, for timing them on the board: 0 the warm-started active
-// set (Law's), 1 ADMM, 2 interior point. The same law on the design's constants, its solver swapped.
-#ifndef BOT_MPC_SOLVER
-#define BOT_MPC_SOLVER 0
-#endif
-template <typename L>
-struct with_solver;
-template <size_t NX, size_t NU, size_t NY, size_t NP, size_t NC, typename T, size_t NV, size_t NI, size_t NT, typename E, size_t NXC>
-struct with_solver<damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::WarmStartActiveSetSolver<NV, NI, T>, NT, E, NXC>> {
-#if BOT_MPC_SOLVER == 1
-    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::AdmmSolver<NV, NI, T>, NT, E, NXC>;
-#elif BOT_MPC_SOLVER == 2
-    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::InteriorPointSolver, NT, E, NXC>;
-#else
-    using type = damp::OFMPC<NX, NU, NY, NP, NC, T, damp::design::WarmStartActiveSetSolver<NV, NI, T>, NT, E, NXC>;
-#endif
-};
-using PitchMPC = with_solver<damp::Law<kPitchOFMPC, float>::Base>::type;
-#endif
-
-/// The two LQIs, the command filters and the references they track.
+/// The pitch and yaw laws, the command filters and the references they track.
 class Balancer {
    public:
     /// Hold the pose the bot is in: references at the measurement, integrators and filters cleared.
@@ -121,7 +90,6 @@ class Balancer {
         psi_ref_ = heading(m);
     }
 
-    /// One period: update → control → clamp → back_calculate → predict.
     constexpr WheelTorques step(const Measurement& m, const Command& cmd) {
         constexpr float r  = (float)(kBot.wheel_radius);
         constexpr float d  = (float)(kBot.track_width);
@@ -139,15 +107,13 @@ class Balancer {
         psi_ref_             = damp::clamp(psi_ref_ + yaw_rate * Ts, psi - kYawLeash, psi + kYawLeash);
 
 #if BOT_PITCH_LAW == 1
-        // The target holds p on the reference point (p_ref, speed) under the filter's d̂; the leash bounds
-        // what that asks.
         pitch_.update({p - p0_, v, m.pitch, m.pitch_rate});
         yaw_.update({psi, psi_rate});
-        const float tau  = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);  // r: p off the reference point
+        const float tau  = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);
         const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
 #elif BOT_PITCH_LAW == 2
-        // In the frame riding the speed command, a standstill on the reference: the target under d̂ is
-        // the CoM's upright, θ = d̂₁, and the torque that cancels d̂₀.
+        // In the frame riding the speed command: a standstill at the CoM's upright θ = d̂₁, the torque
+        // cancelling d̂₀.
         pitch_.update({p - p_ref_, v - speed, m.pitch, m.pitch_rate});
         yaw_.update({psi, psi_rate});
         const auto d_hat = pitch_.disturbance_estimate();
@@ -155,21 +121,18 @@ class Balancer {
         const float tau  = pitch_.control(ColVec<4, float>{0.0f, 0.0f, d_hat(1), 0.0f})(0);
         const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
 #else
-        // Read as a cascade, u = −K_θ·(θ − θ_c) − …: the lean θ_c is what p, v and the integral ask for.
-        // The integral holds at most kIntegralLean of it and θ_c at most kLeanMax, or a bot held off
-        // its reference (a wall, a hand) leans on until it falls. back_calculate sees the clamp, so the
-        // integral stops winding against it.
+        // The lean the p, v and integral terms ask for is capped at kLeanMax, the integral's share at
+        // kIntegralLean: uncapped, a bot held off its reference leans on until it falls.
         constexpr auto& K        = kPitchDesign.K;  // [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, ξ]
         constexpr float k_p      = (float)(K(0, 0));
         constexpr float k_v      = (float)(K(0, 1));
         constexpr float k_th     = damp::abs((float)(K(0, 2)));
         constexpr float k_xi     = (float)(K(0, 7));
         constexpr float xi_max   = k_th * kIntegralLean / damp::abs(k_xi);
-        constexpr float lean_tau = k_th * kLeanMax;  // [N·m] the torque that asks for kLeanMax
+        constexpr float lean_tau = k_th * kLeanMax;
         float&          xi       = pitch_.integral.xi(0);
         xi                       = damp::clamp(xi, -xi_max, xi_max);
 
-        // The pitch law holds the torques still on their way to the wheels: what back_calculate recorded.
         pitch_.update({p, v, m.pitch, m.pitch_rate});
         yaw_.update({psi, psi_rate});
         const float u_law = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
@@ -195,23 +158,23 @@ class Balancer {
         return {.right = 0.5f * (tau_sat + dtau_sat), .left = 0.5f * (tau_sat - dtau_sat)};
     }
 
-    /// [m] axle travel: the wheels' turn against the ground is the encoder plus the body's lean.
+    /// [m] axle travel: the wheels against the body plus the body's lean.
     [[nodiscard]] static constexpr float position(const Measurement& m) {
         return (float)(kBot.wheel_radius) * (0.5f * (m.wheel_r + m.wheel_l) + m.pitch);
     }
 
-    /// The pitch OFMPC's QP iterations on the last tick (0 for the other laws).
+    /// [rad] heading from odometry, counter-clockwise from above.
+    [[nodiscard]] static constexpr float heading(const Measurement& m) {
+        return (float)(kBot.wheel_radius / kBot.track_width) * (m.wheel_r - m.wheel_l);
+    }
+
+    /// The OFMPC's QP iterations on the last tick (0 for the other laws).
     [[nodiscard]] constexpr size_t qp_iterations() const {
 #if BOT_PITCH_LAW == 2
         return pitch_.last_iterations();
 #else
         return 0;
 #endif
-    }
-
-    /// [rad] heading from odometry, counter-clockwise from above.
-    [[nodiscard]] static constexpr float heading(const Measurement& m) {
-        return (float)(kBot.wheel_radius / kBot.track_width) * (m.wheel_r - m.wheel_l);
     }
 
    private:
@@ -223,15 +186,14 @@ class Balancer {
     using Filter = decltype(pitch_.estimator);
     constexpr Filter& filter() { return pitch_.estimator; }
 #else
-    PitchMPC pitch_{kPitchOFMPC.template as<float>()};
+    damp::Law<kPitchOFMPC, float> pitch_{};
     using Filter = damp::remove_cvref_t<decltype(pitch_.estimator())>;
     constexpr Filter& filter() { return pitch_.estimator(); }
 #endif
     float p0_ = 0.0f;  ///< [m] where it engaged: the OFLQG's p is from here
 
-    // Both filters are on [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, d₀, d₁], held as deviations from an anchor.
-
-    /// Start the filter over at a standstill leaning θ, d̂ = 0, wherever its anchor was left.
+    /// Start the filter over at a standstill leaning θ, d̂ = 0. Its state, [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃,
+    /// d₀, d₁], is held as a deviation from an anchor.
     template <typename F>
     static constexpr void restart(F& f, float theta) {
         ColVec<9, float> x{};
@@ -245,11 +207,11 @@ class Balancer {
         f.reset(x);
     }
 #endif
-    damp::Law<kYawDesign, float>   yaw_{};
-    damp::LowPass<1, float>        speed_cmd_{kCommandCutoff, (float)(kTs)};
-    damp::LowPass<1, float>        yaw_cmd_{kCommandCutoff, (float)(kTs)};
-    float                          p_ref_   = 0.0f;
-    float                          psi_ref_ = 0.0f;
+    damp::Law<kYawDesign, float> yaw_{};
+    damp::LowPass<1, float>      speed_cmd_{kCommandCutoff, (float)(kTs)};
+    damp::LowPass<1, float>      yaw_cmd_{kCommandCutoff, (float)(kTs)};
+    float                        p_ref_   = 0.0f;
+    float                        psi_ref_ = 0.0f;
 };
 
 enum class Mode {
@@ -275,7 +237,7 @@ class Controller {
     constexpr Output tick(const Measurement& m, const Health& h, const Command& cmd) {
         const Mode  before = mode_;
         const float tilt   = damp::abs(m.pitch);
-        const bool  drives = h.drives && finite(m);  // a reading that is not a number is a drive fault
+        const bool  drives = h.drives && finite(m);
         switch (mode_) {
             case Mode::Idle:
                 if (upright_(tilt < kEngageTilt && h.imu && drives, (float)(kTs))) {
@@ -297,9 +259,6 @@ class Controller {
         return {.mode = mode_, .changed = mode_ != before, .torque = torque};
     }
 
-    [[nodiscard]] constexpr Mode mode() const { return mode_; }
-
-    /// The pitch OFMPC's QP iterations on the last tick (0 for the other laws).
     [[nodiscard]] constexpr size_t qp_iterations() const { return balancer_.qp_iterations(); }
 
    private:

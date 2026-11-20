@@ -193,7 +193,7 @@ After measuring the real bot, put the numbers in `Nameplate` and rerun the SIL. 
 
 ## Identification on the bot
 
-The control tick goes out on CAN (README, "CAN log"), so a USB-CAN adapter records the loop at 100 Hz. To see the plant inside the closed loop, `kExcitation` in `main.cpp` adds a known torque $`r_k`$ to both wheels while the bot balances: a PRBS9 of ±0.3 or ±0.8 N·m, a new bit every 20 ms, flat to about 25 Hz. $`r`$ is uncorrelated with the hand, the floor and the sensor noise, so the plant from the torque as sent to the lean is the ratio of two cross-spectra (Welch, one PRBS period per segment):
+The control tick goes out on CAN (README, "CAN log"), so a USB-CAN adapter records the loop at 100 Hz. To see the plant inside the closed loop, `kExcitation` in `main.cpp` (removed after 73422d4) added a known torque $`r_k`$ to both wheels while the bot balances: a PRBS9 of ±0.3 or ±0.8 N·m, a new bit every 20 ms, flat to about 25 Hz. $`r`$ is uncorrelated with the hand, the floor and the sensor noise, so the plant from the torque as sent to the lean is the ratio of two cross-spectra (Welch, one PRBS period per segment):
 
 ```math
 P_{\theta\tau}(j\omega) = \frac{S_{r\theta}(j\omega)}{S_{r\tau}(j\omega)}

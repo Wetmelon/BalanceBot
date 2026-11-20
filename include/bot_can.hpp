@@ -1,10 +1,7 @@
 #pragma once
 
-// CAN at 500 kbps to two ODrives in torque mode.
-//   Portenta C33: CAN1 through the Hat Carrier's transceiver. <Arduino_CAN.h> is the patched copy in
-//                 lib/Arduino_CAN: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
-//   Feather M4 CAN: the SAME51's CAN0 through the on-board TCAN1051. <CANSAME5x.h> is Adafruit_CAN in
-//                 lib/Adafruit_CAN, patched: a 64-deep RX FIFO, a 32-deep TX FIFO that never blocks.
+// CAN at 500 kbps to two ODrives in torque mode. Both boards' drivers are patched copies in lib/
+// (README): a 64-deep RX FIFO and a 32-deep TX FIFO that never blocks.
 #if defined(ARDUINO_PORTENTA_C33)
 #include <Arduino_CAN.h>
 #else
@@ -82,8 +79,7 @@ struct BotCanClass {
         send(right_motor, ODriveArduinoCAN::kSetInputTorqueMsg);
     }
 
-    /// A frame for a logger on the bus. Sent only while a drive is there to ACK it (see send()), and
-    /// dropped when the TX FIFO is full: the drives' frames come first.
+    /// A frame for a logger: sent only while a drive is there to ACK it, dropped when the TX FIFO is full.
     void sendLog(uint32_t id, const uint8_t (&data)[8]) {
         if (heard(left_heartbeat_) || heard(right_heartbeat_)) {
             canWrite({id, 8, data});
@@ -117,8 +113,7 @@ struct BotCanClass {
         }
     }
 
-    /// Transmit only to a drive that is there: a frame to an absent node gets no ACK and keeps
-    /// retrying in its TX buffer until the drive appears.
+    /// Only to a drive that is there: a frame nobody ACKs retries in its TX buffer forever.
     void send(const ODriveArduinoCAN& m, ODriveArduinoCAN::CmdList cmd) {
         if (!heard(&m == &left_motor ? left_heartbeat_ : right_heartbeat_)) {
             return;

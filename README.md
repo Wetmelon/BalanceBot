@@ -51,9 +51,7 @@ Each control tick goes out on the bus after the torques, for a logger such as th
 | --- | --- | --- |
 | `0x600` | pitch [rad], float32 | pitch rate [rad/s], float32 |
 | `0x601` | torque left [N·m], float32 | torque right [N·m], float32: the controller's, before the left motor's mirror |
-| `0x602` | x [m], float32 | mode, uint8 (0 idle, 1 active, 2 fault); flags, uint8 (bit 0 IMU fresh, bit 1 drives healthy); excitation [mN·m], int16 |
-
-Set `kExcitation` in [src/main.cpp](src/main.cpp) above 0 (it ships at 0) and, while it balances, the bot adds a pseudo-random torque of that size (PRBS9, a new bit every 20 ms) to both wheels, already included in `0x601`'s torques: a known input, uncorrelated with the hand and the floor, to identify the plant in closed loop. The method and what it found are in [docs/derivation.md](docs/derivation.md#identification-on-the-bot).
+| `0x602` | x [m], float32 | mode, uint8 (0 idle, 1 active, 2 fault); flags, uint8 (bit 0 IMU fresh, bit 1 drives healthy); 2 bytes 0 |
 
 ## CAN on the C33
 

@@ -1,17 +1,8 @@
-/**
- * @file balance_design.hpp
- * @brief BalanceBot's nameplate, plants, weights and the compile-time designs.
- *
- * No Arduino here. balance_controller.hpp runs the designs; docs/derivation.md derives the plant.
- * They have a header of their own because the designs are solved at compile time, and clang
- * (clangd) takes seconds to redo them: an edit to the control tick no longer reparses them.
- *
- * Two decoupled axes, each an LQI:
- *   pitch  x = [p, v, θ, ω], u = τ (sum of the wheel torques), integral on p: designed for
- *          the measured 22 ms delay, the law holds the last three torques sent
- *   yaw    x = [ψ, ψ̇],       u = Δτ (right minus left),      integral on ψ
- * The integrals hold the spot and the heading against a CoM offset, an IMU mount error or a slope.
- */
+// BalanceBot's nameplate, plants, weights and compile-time designs (derived in docs/derivation.md). No
+// Arduino. Kept apart from the tick so clangd doesn't re-solve the designs on every edit there.
+//
+//   pitch  x = [p, v, θ, ω], u = τ (sum of the wheel torques), integral on p, 22 ms input delay
+//   yaw    x = [ψ, ψ̇],       u = Δτ (right minus left),      integral on ψ
 
 #pragma once
 
@@ -28,37 +19,31 @@
 
 namespace bot {
 
-/// x², for the Bryson weights. Not Arduino's sq(): this header builds on the host too.
+/// Not Arduino's sq(): this header builds on the host too.
 [[nodiscard]] constexpr double square(double x) { return x * x; }
 
-/// Physical parameters. "measure" marks an estimate: weigh and swing the real bot, then rerun the SIL.
-///
-/// The pitch plane only sees three numbers (pitch_mass): the translating mass a, the body's mass
-/// moment b = m·l and its inertia about the axle c. Two are measured: b from the whole bot's CoM,
-/// 4.25 in above the axle (the BotWheels' mass sits on the axle, so b = 5.4 kg × 0.108 m), and c
-/// from a drop test, the free fall with the drives idle at λ = 3.66 rad/s:
-/// c = b²/a + b·g/λ². body_mass only splits b and c into com_height and body_inertia.
+/// Physical parameters; "measure" marks an estimate. com_height and body_inertia come from the CoM
+/// (4.25 in above the axle) and a drop test (docs/derivation.md).
 struct Nameplate {
     double wheel_radius  = 0.08255;  ///< [m] 6.5 in BotWheel
     double track_width   = 0.400;    ///< [m] between the tire contact patches: 15.75 in
-    double com_height    = 0.666;    ///< [m] body CoM above the floor: r + b / body_mass
-    double body_mass     = 1.0;      ///< [kg] everything that pitches: 48 in extrusion, acrylic, battery (measure)
-    double body_inertia  = 0.134;    ///< [kg·m²] body about its own CoM, pitch axis: c − b² / body_mass
-    double wheel_mass    = 2.2;      ///< [kg] per side, what rides on the axle: BotWheel, per ODrive
+    double com_height    = 0.666;    ///< [m] body CoM above the floor
+    double body_mass     = 1.0;      ///< [kg] everything that pitches (measure)
+    double body_inertia  = 0.134;    ///< [kg·m²] body about its own CoM, pitch axis
+    double wheel_mass    = 2.2;      ///< [kg] per side, what rides on the axle
     double wheel_inertia = 0.006;    ///< [kg·m²] per side, the rotating part about the axle (measure)
-    double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical: the wheels at ±d/2 (measure)
+    double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical (measure)
     double gravity       = 9.81;     ///< [m/s²]
     double torque_gain   = 1.0;      ///< the fraction of the asked torque the motors deliver
 };
 
 inline constexpr Nameplate kBot{};
 
-/// The bot as identified above 2 Hz (docs/derivation.md): 0.88 of the asked torque, and 13.4 kg
-/// translating, as if each wheel had 0.027 kg·m² (friction the drive still has to move, most likely).
+/// As identified on the bot above 2 Hz: 0.88 of the asked torque, 13.4 kg translating.
 inline constexpr Nameplate kBotFitted{.wheel_inertia = 0.027, .torque_gain = 0.88};
 inline constexpr double    kTs = 0.01;  ///< [s] 100 Hz control period
 
-/// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c] (docs/derivation.md).
+/// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c].
 struct PitchMass {
     double a = 0.0;  ///< [kg] translating mass, wheel inertia reflected through r
     double b = 0.0;  ///< [kg·m] body mass × CoM height above the axle
@@ -115,14 +100,8 @@ struct PitchMass {
     };
 }
 
-// Bryson weights, 1 / (acceptable excursion)², on the continuous cost; Van Loan samples it at Ts.
-// Pitch: the tall body falls at 3.66 rad/s and puts the non-minimum-phase zero of torque to position
-// at 3.3 rad/s, so position is slow. The torque penalty holds the margin the SIL asks for (±20 % on
-// the nameplate with every reading a period late); the weight on ω damps the ring the bot showed
-// after a push, which the model does not (docs/derivation.md). ω, R and the integral are set by the
-// SIL's far corner, which must both hold the spot within 5 cm and ring under 1° 4 s after a push:
-// ω 0.09 rad/s, R 3.2 and ∫p 200 (flown until 2026-11-16) did one or the other, not both. A failed
-// design does not compile.
+// Bryson weights, 1 / (acceptable excursion)². ω, R and ∫p are tuned on the SIL's far corner, which
+// must hold the spot within 5 cm and ring under 1° after a push. A failed design does not compile.
 constexpr double kPmax     = 0.02;                // [m]
 constexpr double kVmax     = 0.5;                 // [m/s]
 constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
@@ -134,7 +113,7 @@ inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
         1.0 / square(kVmax),
         1.0 / square(kThetaMax),
         1.0 / square(kOmegaMax)
-    ),                    // p 2 cm, v 0.5 m/s, θ 6°, ω 0.12 rad/s
+    ),
     .R          = 1.5,    // τ 0.82 N·m
     .Q_integral = 350.0,  // ∫p 0.053 m·s
 };
@@ -145,35 +124,30 @@ inline constexpr damp::design::LQIConfig<2, 1, 1> kYawWeights{
     .Q_integral = 25.0,                   // ∫ψ 0.2 rad·s
 };
 
-inline constexpr float kWheelTorqueMax = 8.0f;   ///< [N·m] per wheel, the clamp on the law (traction alone holds about 2: μ ≈ 0.9 × m·g/2 × r)
+inline constexpr float kWheelTorqueMax = 8.0f;   ///< [N·m] per wheel, the clamp on the law (traction holds about 2)
 inline constexpr float kLeanMax        = 0.26f;  ///< [rad] 15°: the most lean position, speed and the integral may ask for
 
-/// [s] torque command to IMU reading, measured on the bot (docs/derivation.md): CAN, the drives'
-/// current loop and the IMU together. The pitch law holds the torques still on their way in
-/// kDelayTicks registers.
+/// [s] torque command to IMU reading, measured: CAN, the drives' current loop and the IMU together.
 inline constexpr double kDelay      = 0.022;
 inline constexpr size_t kDelayTicks = 3;
 
-// Integral action on each plant's output y = C·x: p for pitch, ψ for yaw. The pitch design runs on
-// the plant with the torque arriving kDelay late, its cost discretized exactly on that model.
 inline constexpr auto kPitchDesign = damp::design::lqi(pitch_plant(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchWeights);
 inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
 
-// ---- Experiment: the pitch law with a filter in place of the integral ------------------------------
-// BOT_PITCH_LAW 0 is the LQI above, 1 an OFLQG, 2 an OFMPC (envs c33_oflqg, c33_ofmpc).
+// Experiment: the pitch law with a filter in place of the integral. BOT_PITCH_LAW 0 is the LQI above,
+// 1 an OFLQG, 2 an OFMPC (envs c33_oflqg, c33_ofmpc).
 #ifndef BOT_PITCH_LAW
 #define BOT_PITCH_LAW 0
 #endif
 
-/// The pitch plant with every state read, y = [p, v, θ, ω], and noise on each state and reading.
+/// The pitch plant with every state read, y = [p, v, θ, ω].
 [[nodiscard]] constexpr auto pitch_plant_read(const Nameplate& n) {
     const auto s = pitch_plant(n);
     return damp::StateSpace<4, 1, 4, double, 4, 4>{.A = s.A, .B = s.B, .C = damp::Matrix<4, 4>::identity()};
 }
 
-/// What the filter estimates and the target cancels, constant until the readings say otherwise: d₀ a
-/// torque on the wheels [N·m] (a slope, a hand, a sticky drivetrain), acting at once, not through the
-/// drives' delay; d₁ the CoM's upright [rad], off the IMU's by a mount error or a load. The target holds p.
+/// What the filter estimates and the target cancels: d₀ a torque on the wheels [N·m] (a slope, a hand,
+/// a sticky drivetrain), acting at once; d₁ the CoM's upright [rad], off the IMU's by a mount error or a load.
 [[nodiscard]] constexpr auto pitch_disturbance(const Nameplate& n) {
     const auto                                 s = pitch_plant(n);
     damp::design::DisturbanceModel<4, 4, 2, 1> d{.outputs = {0}};
@@ -184,20 +158,15 @@ inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYa
     return d;
 }
 
-/// Process densities [x²/s] (through G = I), reading variances [y²], the disturbances' walks [d²/s]:
-/// guesses, until a log of the bot standing says better.
+/// Process densities [x²/s], reading variances [y²], the disturbances' walks [d²/s]: guesses.
 inline constexpr damp::design::KalmanNoise<4, 4, double, 2> kPitchNoise{
     .process     = damp::diag(1e-6, 1e-2, 1e-6, 1e-1),
     .measurement = damp::diag(square(1e-4), square(5e-3), square(1e-3), square(5e-3)),  // p 0.1 mm, v 5 mm/s, θ 1 mrad, ω 5 mrad/s
-    .disturbance = damp::diag(square(0.3), square(0.02)),                                // 0.3 N·m, 1.1° in a second: d̂₁ settles in τ ≈ 2 s
+    .disturbance = damp::diag(square(0.3), square(0.02)),                               // 0.3 N·m, 1.1° in a second
 };
 
-/// The OFLQG's and OFMPC's cost: the LQI's p, v and θ weights, R 3.2, and ω 0.05 rad/s, which damps
-/// the loop's 1 Hz mode. Its closed-loop modes (to_ss on the fitted plant, every ±20 % corner, 12 to
-/// 32 ms late) are damped at least ζ 0.33; with ω 0.09 one rang at ζ 0.11, the floor's slow settling.
-/// demand_lim
-/// (the OFLQG's) caps the lean p and v ask for at kLeanMax, as the LQI's hand clamp does: without
-/// it a bot pushed along a metre leans back past kTipTilt to return and cuts out.
+/// The OFLQG's and OFMPC's cost: the LQI's p, v and θ weights, R 3.2, and ω 0.05 rad/s to damp the
+/// loop's 1 Hz mode. demand_lim caps the lean p and v ask for at kLeanMax, as the LQI's clamp does.
 inline constexpr damp::design::LQRConfig<4, 1> kPitchFilterCost{
     .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.05)),
     .R          = 3.2,
@@ -209,30 +178,19 @@ inline constexpr auto kPitchOFLQG = damp::design::oflqg(
     pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchFilterCost, kPitchNoise, pitch_disturbance(kBotFitted)
 );
 #elif BOT_PITCH_LAW == 2
-// The OFMPC sees the pitch plane from a frame riding the speed command, y = [p − p_ref, v − speed, θ, ω],
-// so it regulates to a standstill: the plant is the same at any constant speed. It has the LQI's cost
-// per step, and as constraints what the LQI gets from clamps: the torque, the lean, and how far off the
-// speed command a push may take it (the drives run out of voltage at 1.05 m/s on 19 V).
-// The horizons and the QP's iteration budget, overridable from the build for timing them on the board.
-#ifndef BOT_MPC_NP
-#define BOT_MPC_NP 10
-#endif
-#ifndef BOT_MPC_NC
-#define BOT_MPC_NC 5
-#endif
-#ifndef BOT_MPC_ITERATIONS
-#define BOT_MPC_ITERATIONS 40  // 0 is Damp's default, 10·(NZ + 1 + NI + 1) = 1070: about 50 ms on the C33 if used up. 40 is ~2.1 ms; a push takes 10
-#endif
-inline constexpr size_t kHorizon      = BOT_MPC_NP;  ///< [steps] 0.1 s, the DARE's cost-to-go after it: 20 cost 12x the QP on a push (host)
-inline constexpr size_t kMoves        = BOT_MPC_NC;  ///< [steps] the moves the QP chooses; the last holds to the horizon
-inline constexpr double kSpeedMargin  = 1.0;   ///< [m/s] the most the bot may run off the speed command
+// The OFMPC regulates y = [p − p_ref, v − speed, θ, ω] to a standstill, in a frame riding the speed
+// command. Its constraints are the LQI's clamps: torque, lean, and speed off the command.
+inline constexpr size_t kHorizon      = 10;   ///< [steps] 0.1 s, then the DARE's cost-to-go
+inline constexpr size_t kMoves        = 5;    ///< [steps] the last move holds to the horizon
+inline constexpr size_t kQpIterations = 40;   ///< ~2.1 ms on the C33 if used up; a push takes 10
+inline constexpr double kSpeedMargin  = 1.0;  ///< [m/s] the most the bot may run off the speed command
 inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
 
 /// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the registers.
 [[nodiscard]] constexpr auto pitch_disturbance_sampled(const Nameplate& n) {
     const auto                                 s  = pitch_plant(n);
     const auto                                 dd = damp::discretize(damp::StateSpace<4, 2, 1>{.A = s.A, .B = pitch_disturbance(n).Bd, .C = s.C}, kTs).value();
-    damp::design::DisturbanceModel<7, 4, 2, 0> d{};  // every reading held to its reference
+    damp::design::DisturbanceModel<7, 4, 2, 0> d{};
     for (size_t i = 0; i < 4; ++i) {
         for (size_t j = 0; j < 2; ++j) {
             d.Bd(i, j) = dd.B(i, j);
@@ -241,10 +199,9 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFi
     return d;
 }
 
-/// The QP weighs signals scaled by each limit's range (1 for an unbounded one): kPitchFilterCost's Q and R,
-/// per step, scaled to match.
+/// kPitchFilterCost per step, scaled as the QP scales each signal: by its limit's range (1 if unbounded).
 [[nodiscard]] constexpr auto pitch_mpc_design() {
-    constexpr double big = damp::numeric_limits<double>::max();  // no limit
+    constexpr double big  = damp::numeric_limits<double>::max();
     const double     lean = (double)(kLeanMax), tau = 2.0 * (double)(kWheelTorqueMax);
     const double     s[4] = {1.0, 2.0 * kSpeedMargin, 2.0 * lean, 1.0};
     const double     s_u  = 2.0 * tau;
@@ -255,17 +212,13 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFi
     }
     w.Qy_terminal = w.Qy;
     w.Ru          = kPitchFilterCost.R * (kTs * square(s_u));
-    // [per (N·m)²] on each torque step. 1e-4 of it let the QP jump the torque from tick to tick while the
-    // lean limit held, which the bot did as a buzz: in the SIL a push at 4 N reversed the torque's step
-    // 18 times in 4 s on the far corner, mean |Δ²τ| 0.54 N·m. 0.3 (the floor's pick) gives 0.05 and still
-    // holds the lean limit; it recovers a little slower, so the SIL's ring limit is 1.2° for this law.
-    w.Rdu         = damp::Matrix<1, 1>{0.3 * square(s_u)};
+    w.Rdu         = damp::Matrix<1, 1>{0.3 * square(s_u)};  // [per (N·m)²] torque step: less buzzes at the lean limit
 
-    damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost, .max_qp_iterations = BOT_MPC_ITERATIONS};
+    damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost, .max_qp_iterations = kQpIterations};
     c.u_lim = {.lower = {-tau}, .upper = {tau}};
     c.y_lim = {.lower = {-big, -kSpeedMargin, -lean, -big}, .upper = {big, kSpeedMargin, lean, big}};
 
-    // Discrete noise: G is ∫e^{Aτ}dτ ≈ Ts·I, so the density over Ts; the walks are per step.
+    // Discrete noise: G ≈ Ts·I, so the density over Ts; the walks per step.
     damp::design::KalmanNoise<4, 4, double, 2> noise = kPitchNoise;
     noise.process                                    = kPitchNoise.process * (1.0 / kTs);
     noise.disturbance                                = kPitchNoise.disturbance * kTs;
