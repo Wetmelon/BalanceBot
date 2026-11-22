@@ -72,7 +72,7 @@ struct PitchMass {
     const double r       = n.wheel_radius;
     const double g       = n.gravity;
     const double D       = a * c - b * b;
-    return damp::StateSpace<4, 1, 1>{
+    return damp::StateSpace{
         .A = {
             {0.0, 1.0, 0.0, 0.0},
             {0.0, 0.0, -b * b * g / D, 0.0},
@@ -93,7 +93,7 @@ struct PitchMass {
 
 /// Yaw: x = [ψ, ψ̇], u = Δτ = τ_R − τ_L, y = ψ.
 [[nodiscard]] constexpr auto yaw_plant(const Nameplate& n) {
-    return damp::StateSpace<2, 1, 1>{
+    return damp::StateSpace{
         .A = {{0.0, 1.0}, {0.0, 0.0}},
         .B = {{0.0}, {n.torque_gain * n.track_width / (2.0 * n.wheel_radius * yaw_inertia(n))}},
         .C = {{1.0, 0.0}},
@@ -107,25 +107,28 @@ constexpr double kVmax     = 0.5;                 // [m/s]
 constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
 constexpr double kOmegaMax = 0.12;                // [rad/s]
 
-inline constexpr damp::design::LQIConfig<4, 1, 1> kPitchWeights{
+inline constexpr float kLeanMax = 0.26f;  ///< [rad] 15°: the most lean position, speed and the integral may ask for
+
+inline constexpr damp::design::LQIConfig kPitchWeights{
     .Q = damp::diag(
         1.0 / square(kPmax),
         1.0 / square(kVmax),
         1.0 / square(kThetaMax),
         1.0 / square(kOmegaMax)
     ),
-    .R          = 1.5,    // τ 0.82 N·m
-    .Q_integral = 350.0,  // ∫p 0.053 m·s
+    .R          = {1.5},    // τ 0.82 N·m
+    .Q_integral = {350.0},  // ∫p 0.053 m·s
+    // The lean p, v and ∫p ask for is capped at kLeanMax: uncapped, a bot held off its reference leans on until it falls.
+    .demand_lim = {.state = 2, .outer = {true, true, false, false, true}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
 };
 
-inline constexpr damp::design::LQIConfig<2, 1, 1> kYawWeights{
+inline constexpr damp::design::LQIConfig kYawWeights{
     .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
-    .R          = 0.0625,                 // Δτ 4 N·m
-    .Q_integral = 25.0,                   // ∫ψ 0.2 rad·s
+    .R          = {0.0625},               // Δτ 4 N·m
+    .Q_integral = {25.0},                 // ∫ψ 0.2 rad·s
 };
 
-inline constexpr float kWheelTorqueMax = 8.0f;   ///< [N·m] per wheel, the clamp on the law (traction holds about 2)
-inline constexpr float kLeanMax        = 0.26f;  ///< [rad] 15°: the most lean position, speed and the integral may ask for
+inline constexpr float kWheelTorqueMax = 8.0f;  ///< [N·m] per wheel, the clamp on the law (traction holds about 2)
 
 /// [s] torque command to IMU reading, measured: CAN, the drives' current loop and the IMU together.
 inline constexpr double kDelay      = 0.022;
@@ -143,7 +146,7 @@ inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYa
 /// The pitch plant with every state read, y = [p, v, θ, ω].
 [[nodiscard]] constexpr auto pitch_plant_read(const Nameplate& n) {
     const auto s = pitch_plant(n);
-    return damp::StateSpace<4, 1, 4, double, 4, 4>{.A = s.A, .B = s.B, .C = damp::Matrix<4, 4>::identity()};
+    return damp::StateSpace{.A = s.A, .B = s.B, .C = damp::Matrix<4, 4>::identity()};
 }
 
 /// What the filter estimates and the target cancels: d₀ a torque on the wheels [N·m] (a slope, a hand,
@@ -159,17 +162,17 @@ inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYa
 }
 
 /// Process densities [x²/s], reading variances [y²], the disturbances' walks [d²/s]: guesses.
-inline constexpr damp::design::KalmanNoise<4, 4, double, 2> kPitchNoise{
+inline constexpr damp::design::KalmanNoise kPitchNoise{
     .process     = damp::diag(1e-6, 1e-2, 1e-6, 1e-1),
     .measurement = damp::diag(square(1e-4), square(5e-3), square(1e-3), square(5e-3)),  // p 0.1 mm, v 5 mm/s, θ 1 mrad, ω 5 mrad/s
     .disturbance = damp::diag(square(0.3), square(0.02)),                               // 0.3 N·m, 1.1° in a second
 };
 
 /// The OFLQG's and OFMPC's cost: the LQI's p, v and θ weights, R 3.2, and ω 0.05 rad/s to damp the
-/// loop's 1 Hz mode. demand_lim caps the lean p and v ask for at kLeanMax, as the LQI's clamp does.
-inline constexpr damp::design::LQRConfig<4, 1> kPitchFilterCost{
+/// loop's 1 Hz mode. demand_lim caps the lean p and v ask for at kLeanMax, as the LQI's does.
+inline constexpr damp::design::LQRConfig kPitchFilterCost{
     .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.05)),
-    .R          = 3.2,
+    .R          = {3.2},
     .demand_lim = {.state = 2, .outer = {true, true, false, false}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
 };
 
@@ -184,12 +187,16 @@ inline constexpr size_t kHorizon      = 10;   ///< [steps] 0.1 s, then the DARE'
 inline constexpr size_t kMoves        = 5;    ///< [steps] the last move holds to the horizon
 inline constexpr size_t kQpIterations = 40;   ///< ~2.1 ms on the C33 if used up; a push takes 10
 inline constexpr double kSpeedMargin  = 1.0;  ///< [m/s] the most the bot may run off the speed command
-inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
 
-/// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the registers.
+// Its 4 noise inputs named: discretize keeps them off the delay states, which a model that names
+// none would put noise on.
+inline constexpr auto kPitchRead    = pitch_plant_read(kBotFitted);
+inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace<4, 1, 4, double, 4, 4>{.A = kPitchRead.A, .B = kPitchRead.B, .C = kPitchRead.C}, kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
+
+/// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the delay states.
 [[nodiscard]] constexpr auto pitch_disturbance_sampled(const Nameplate& n) {
     const auto                                 s  = pitch_plant(n);
-    const auto                                 dd = damp::discretize(damp::StateSpace<4, 2, 1>{.A = s.A, .B = pitch_disturbance(n).Bd, .C = s.C}, kTs).value();
+    const auto                                 dd = damp::discretize(damp::StateSpace{.A = s.A, .B = pitch_disturbance(n).Bd, .C = s.C}, kTs).value();
     damp::design::DisturbanceModel<7, 4, 2, 0> d{};
     for (size_t i = 0; i < 4; ++i) {
         for (size_t j = 0; j < 2; ++j) {
@@ -212,16 +219,16 @@ inline constexpr auto   kPitchSampled = damp::discretize(pitch_plant_read(kBotFi
     }
     w.Qy_terminal = w.Qy;
     w.Ru          = kPitchFilterCost.R * (kTs * square(s_u));
-    w.Rdu         = damp::Matrix<1, 1>{0.3 * square(s_u)};  // [per (N·m)²] torque step: less buzzes at the lean limit
+    w.Rdu         = 0.3 * square(s_u);  // [per (N·m)²] torque step: less buzzes at the lean limit
 
     damp::design::MPCConstraints<1, 4> c{.terminal = damp::design::MPCTerminal::dare_cost, .max_qp_iterations = kQpIterations};
     c.u_lim = {.lower = {-tau}, .upper = {tau}};
     c.y_lim = {.lower = {-big, -kSpeedMargin, -lean, -big}, .upper = {big, kSpeedMargin, lean, big}};
 
     // Discrete noise: G ≈ Ts·I, so the density over Ts; the walks per step.
-    damp::design::KalmanNoise<4, 4, double, 2> noise = kPitchNoise;
-    noise.process                                    = kPitchNoise.process * (1.0 / kTs);
-    noise.disturbance                                = kPitchNoise.disturbance * kTs;
+    auto noise        = kPitchNoise;
+    noise.process     = kPitchNoise.process * (1.0 / kTs);
+    noise.disturbance = kPitchNoise.disturbance * kTs;
     return damp::design::ofmpc<kHorizon, kMoves>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();

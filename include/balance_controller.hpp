@@ -78,9 +78,12 @@ class Balancer {
     /// Hold the pose the bot is in: references at the measurement, integrators and filters cleared.
     constexpr void engage(const Measurement& m) {
         pitch_.reset();
+#if BOT_PITCH_LAW == 0
+        pitch_.integral_lim = {.lower = {-kXiMax}, .upper = {kXiMax}};
+#endif
 #if BOT_PITCH_LAW != 0
         pitch_.disturbance_lim = kDisturbanceLim;
-        restart(filter(), m.pitch);
+        pitch_.estimator.reset({0.0f, 0.0f, m.pitch, 0.0f, 0.0f, 0.0f, 0.0f});  // at rest leaning θ, no torque in flight, d̂ = 0
         p0_ = position(m);
 #endif
         yaw_.reset();
@@ -108,41 +111,20 @@ class Balancer {
 
 #if BOT_PITCH_LAW == 1
         pitch_.update({p - p0_, v, m.pitch, m.pitch_rate});
-        yaw_.update({psi, psi_rate});
-        const float tau  = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);
-        const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
+        const float tau = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);
 #elif BOT_PITCH_LAW == 2
         // In the frame riding the speed command: a standstill at the CoM's upright θ = d̂₁, the torque
         // cancelling d̂₀.
         pitch_.update({p - p_ref_, v - speed, m.pitch, m.pitch_rate});
-        yaw_.update({psi, psi_rate});
         const auto d_hat = pitch_.disturbance_estimate();
-        pitch_.set_input_target(ColVec<1, float>{-d_hat(0)});
-        const float tau  = pitch_.control(ColVec<4, float>{0.0f, 0.0f, d_hat(1), 0.0f})(0);
-        const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
+        pitch_.set_input_target(-d_hat(0));
+        const float tau = pitch_.control({0.0f, 0.0f, d_hat(1), 0.0f})(0);
 #else
-        // The lean the p, v and integral terms ask for is capped at kLeanMax, the integral's share at
-        // kIntegralLean: uncapped, a bot held off its reference leans on until it falls.
-        constexpr auto& K        = kPitchDesign.K;  // [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃, ξ]
-        constexpr float k_p      = (float)(K(0, 0));
-        constexpr float k_v      = (float)(K(0, 1));
-        constexpr float k_th     = damp::abs((float)(K(0, 2)));
-        constexpr float k_xi     = (float)(K(0, 7));
-        constexpr float xi_max   = k_th * kIntegralLean / damp::abs(k_xi);
-        constexpr float lean_tau = k_th * kLeanMax;
-        float&          xi       = pitch_.integral.xi(0);
-        xi                       = damp::clamp(xi, -xi_max, xi_max);
-
         pitch_.update({p, v, m.pitch, m.pitch_rate});
-        yaw_.update({psi, psi_rate});
-        const float u_law = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
-        const float outer = -((k_p * (p - p_ref_)) + (k_v * (v - speed)) + (k_xi * xi));
-        float       tau   = u_law;  // untouched unless clamped: back_calculate reads any difference as a clamp
-        if (damp::abs(outer) > lean_tau) {
-            tau += damp::clamp(outer, -lean_tau, lean_tau) - outer;
-        }
-        const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
+        const float tau = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
 #endif
+        yaw_.update({psi, psi_rate});
+        const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
 
         // Balance first: pitch takes what it needs, steering gets what is left on each wheel.
         constexpr float tau_max  = 2.0f * kWheelTorqueMax;
@@ -179,33 +161,16 @@ class Balancer {
 
    private:
 #if BOT_PITCH_LAW == 0
+    /// The most of the lean the integral may hold, kIntegralLean, as a bound on ξ.
+    static constexpr float         kXiMax = damp::abs((float)(kPitchDesign.state_gain()(0, 2))) * kIntegralLean / damp::abs((float)(kPitchDesign.integral_gain()(0, 0)));
     damp::Law<kPitchDesign, float> pitch_{};
-#else
-#if BOT_PITCH_LAW == 1
+#elif BOT_PITCH_LAW == 1
     damp::Law<kPitchOFLQG, float> pitch_{};
-    using Filter = decltype(pitch_.estimator);
-    constexpr Filter& filter() { return pitch_.estimator; }
 #else
     damp::Law<kPitchOFMPC, float> pitch_{};
-    using Filter = damp::remove_cvref_t<decltype(pitch_.estimator())>;
-    constexpr Filter& filter() { return pitch_.estimator(); }
 #endif
+#if BOT_PITCH_LAW != 0
     float p0_ = 0.0f;  ///< [m] where it engaged: the OFLQG's p is from here
-
-    /// Start the filter over at a standstill leaning θ, d̂ = 0. Its state, [p, v, θ, ω, τ₋₁, τ₋₂, τ₋₃,
-    /// d₀, d₁], is held as a deviation from an anchor.
-    template <typename F>
-    static constexpr void restart(F& f, float theta) {
-        ColVec<9, float> x{};
-        for (size_t i = 0; i < 7; ++i) {
-            x(i) = -f.anchor_state()(i);
-        }
-        x(2) += theta;
-        for (size_t i = 0; i < 2; ++i) {
-            x(7 + i) = -f.anchor_disturbance()(i);
-        }
-        f.reset(x);
-    }
 #endif
     damp::Law<kYawDesign, float> yaw_{};
     damp::LowPass<1, float>      speed_cmd_{kCommandCutoff, (float)(kTs)};
