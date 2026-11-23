@@ -126,18 +126,17 @@ class Balancer {
         yaw_.update({psi, psi_rate});
         const float dtau = yaw_.control(psi_ref_, {psi_ref_, yaw_rate}, {})(0);
 
-        // Balance first: pitch takes what it needs, steering gets what is left on each wheel.
+        // Balance first: pitch takes what it needs, clamped by its own law to both wheels' limit, and
+        // steering gets what is left on each wheel.
         constexpr float tau_max  = 2.0f * kWheelTorqueMax;
-        const float     tau_sat  = damp::clamp(tau, -tau_max, tau_max);
-        const float     dtau_max = tau_max - damp::abs(tau_sat);
+        const float     dtau_max = tau_max - damp::abs(tau);
         const float     dtau_sat = damp::clamp(dtau, -dtau_max, dtau_max);
 
-        pitch_.back_calculate(tau_sat);
         yaw_.back_calculate(dtau_sat);
         pitch_.predict();
         yaw_.predict();
 
-        return {.right = 0.5f * (tau_sat + dtau_sat), .left = 0.5f * (tau_sat - dtau_sat)};
+        return {.right = 0.5f * (tau + dtau_sat), .left = 0.5f * (tau - dtau_sat)};
     }
 
     /// [m] axle travel: the wheels against the body plus the body's lean.

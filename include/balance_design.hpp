@@ -8,9 +8,7 @@
 
 #include <cstddef>
 
-#include "damp/controllers/lqi.hpp"
 #include "damp/controllers/mpc.hpp"
-#include "damp/controllers/oflqg.hpp"
 #include "damp/controllers/state_feedback.hpp"
 #include "damp/math/math.hpp"
 #include "damp/matrix/concat.hpp"
@@ -130,11 +128,14 @@ inline constexpr damp::design::LQRWeights kYawWeights{
 
 inline constexpr float kWheelTorqueMax = 8.0f;  ///< [N·m] per wheel, the clamp on the law (traction holds about 2)
 
+/// The pitch law's clamp, both wheels' torque: the law holds its integrator against it itself.
+inline constexpr damp::design::LQRLimits kPitchTorqueLim{.u_lim = {.lower = -2.0 * kWheelTorqueMax, .upper = 2.0 * kWheelTorqueMax}};
+
 /// [s] torque command to IMU reading, measured: CAN, the drives' current loop and the IMU together.
 inline constexpr double kDelay      = 0.022;
 inline constexpr size_t kDelayTicks = 3;
 
-inline constexpr auto kPitchDesign = damp::design::state_feedback(pitch_plant(kBot), kTs, kPitchWeights, kPitchLean, kPitchIntegral, damp::InputDelay<kDelayTicks>{kDelay});
+inline constexpr auto kPitchDesign = damp::design::state_feedback(pitch_plant(kBot), kTs, kPitchWeights, kPitchTorqueLim, kPitchLean, kPitchIntegral, damp::InputDelay<kDelayTicks>{kDelay});
 inline constexpr auto kYawDesign   = damp::design::state_feedback(yaw_plant(kBot), kTs, kYawWeights, damp::design::IntegralAction{.Q = 25.0});  // ∫ψ 0.2 rad·s
 
 // Experiment: the pitch law with a filter in place of the integral. BOT_PITCH_LAW 0 is the LQI above,
@@ -178,7 +179,7 @@ inline constexpr damp::DemandLimit kPitchFilterLean{.state = 2, .outer = {0, 1},
 
 #if BOT_PITCH_LAW == 1
 inline constexpr auto kPitchOFLQG = damp::design::state_feedback(
-    pitch_plant_read(kBotFitted), kTs, kPitchFilterCost, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
+    pitch_plant_read(kBotFitted), kTs, kPitchFilterCost, kPitchTorqueLim, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
 );
 #elif BOT_PITCH_LAW == 2
 // The OFMPC regulates y = [p − p_ref, v − speed, θ, ω] to a standstill, in a frame riding the speed
@@ -191,7 +192,7 @@ inline constexpr double kSpeedMargin  = 1.0;  ///< [m/s] the most the bot may ru
 // Its 4 noise inputs named: discretize keeps them off the delay states, which a model that names
 // none would put noise on.
 inline constexpr auto kPitchRead    = pitch_plant_read(kBotFitted);
-inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace<4, 1, 4, double, 4, 4>{.A = kPitchRead.A, .B = kPitchRead.B, .C = kPitchRead.C}, kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
+inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace{.A = kPitchRead.A, .B = kPitchRead.B, .C = kPitchRead.C, .G = damp::Matrix<4, 4>::identity(), .H = damp::Matrix<4, 4>::identity()}, kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
 
 /// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the delay states.
 [[nodiscard]] constexpr auto pitch_disturbance_sampled(const Nameplate& n) {
