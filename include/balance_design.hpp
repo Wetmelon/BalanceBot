@@ -153,13 +153,8 @@ inline constexpr auto kYawDesign   = damp::design::state_feedback(yaw_plant(kBot
 /// What the filter estimates and the target cancels: d₀ a torque on the wheels [N·m] (a slope, a hand,
 /// a sticky drivetrain), acting at once; d₁ the CoM's upright [rad], off the IMU's by a mount error or a load.
 [[nodiscard]] constexpr auto pitch_disturbance(const Nameplate& n) {
-    const auto                                 s = pitch_plant(n);
-    damp::design::DisturbanceModel<4, 4, 2, 1> d{.outputs = {0}};
-    for (size_t i = 0; i < 4; ++i) {
-        d.Bd(i, 0) = s.B(i, 0);
-        d.Bd(i, 1) = -s.A(i, 2);  // gravity pulls toward θ = d₁
-    }
-    return d;
+    const auto s = pitch_plant(n);
+    return damp::design::DisturbanceModel<4, 4, 2, 1>{.Bd = damp::hcat(s.B, -s.A.col(2)), .outputs = {0}};  // d₁: gravity pulls toward θ = d₁
 }
 
 /// Process densities [x²/s], reading variances [y²], the disturbances' walks [d²/s]: guesses.
