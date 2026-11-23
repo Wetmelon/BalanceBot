@@ -9,8 +9,9 @@
 #include <cstddef>
 
 #include "damp/controllers/lqi.hpp"
+#include "damp/controllers/mpc.hpp"
 #include "damp/controllers/oflqg.hpp"
-#include "damp/controllers/ofmpc.hpp"
+#include "damp/controllers/state_feedback.hpp"
 #include "damp/math/math.hpp"
 #include "damp/matrix/concat.hpp"
 #include "damp/matrix/matrix.hpp"
@@ -109,23 +110,22 @@ constexpr double kOmegaMax = 0.12;                // [rad/s]
 
 inline constexpr float kLeanMax = 0.26f;  ///< [rad] 15°: the most lean position, speed and the integral may ask for
 
-inline constexpr damp::design::LQIConfig kPitchWeights{
+inline constexpr damp::design::LQRWeights kPitchWeights{
     .Q = damp::diag(
         1.0 / square(kPmax),
         1.0 / square(kVmax),
         1.0 / square(kThetaMax),
         1.0 / square(kOmegaMax)
     ),
-    .R          = {1.5},    // τ 0.82 N·m
-    .Q_integral = {350.0},  // ∫p 0.053 m·s
-    // The lean p, v and ∫p ask for is capped at kLeanMax: uncapped, a bot held off its reference leans on until it falls.
-    .demand_lim = {.state = 2, .outer = {true, true, false, false, true}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
+    .R = {1.5},  // τ 0.82 N·m
 };
+// The lean p, v and ∫p (states 0, 1, then the integrator, 4) ask for is capped at kLeanMax: uncapped, a bot held off its reference leans on until it falls.
+inline constexpr damp::DemandLimit            kPitchLean{.state = 2, .outer = {0, 1, 4}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}};
+inline constexpr damp::design::IntegralAction kPitchIntegral{.Q = 350.0};  // ∫p 0.053 m·s
 
-inline constexpr damp::design::LQIConfig kYawWeights{
-    .Q          = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
-    .R          = {0.0625},               // Δτ 4 N·m
-    .Q_integral = {25.0},                 // ∫ψ 0.2 rad·s
+inline constexpr damp::design::LQRWeights kYawWeights{
+    .Q = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
+    .R = {0.0625},               // Δτ 4 N·m
 };
 
 inline constexpr float kWheelTorqueMax = 8.0f;  ///< [N·m] per wheel, the clamp on the law (traction holds about 2)
@@ -134,8 +134,8 @@ inline constexpr float kWheelTorqueMax = 8.0f;  ///< [N·m] per wheel, the clamp
 inline constexpr double kDelay      = 0.022;
 inline constexpr size_t kDelayTicks = 3;
 
-inline constexpr auto kPitchDesign = damp::design::lqi(pitch_plant(kBot), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchWeights);
-inline constexpr auto kYawDesign   = damp::design::lqi(yaw_plant(kBot), kTs, kYawWeights);
+inline constexpr auto kPitchDesign = damp::design::state_feedback(pitch_plant(kBot), kTs, kPitchWeights, kPitchLean, kPitchIntegral, damp::InputDelay<kDelayTicks>{kDelay});
+inline constexpr auto kYawDesign   = damp::design::state_feedback(yaw_plant(kBot), kTs, kYawWeights, damp::design::IntegralAction{.Q = 25.0});  // ∫ψ 0.2 rad·s
 
 // Experiment: the pitch law with a filter in place of the integral. BOT_PITCH_LAW 0 is the LQI above,
 // 1 an OFLQG, 2 an OFMPC (envs c33_oflqg, c33_ofmpc).
@@ -169,16 +169,16 @@ inline constexpr damp::design::KalmanNoise kPitchNoise{
 };
 
 /// The OFLQG's and OFMPC's cost: the LQI's p, v and θ weights, R 3.2, and ω 0.05 rad/s to damp the
-/// loop's 1 Hz mode. demand_lim caps the lean p and v ask for at kLeanMax, as the LQI's does.
-inline constexpr damp::design::LQRConfig kPitchFilterCost{
-    .Q          = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.05)),
-    .R          = {3.2},
-    .demand_lim = {.state = 2, .outer = {true, true, false, false}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}},
+/// loop's 1 Hz mode. kPitchFilterLean caps the lean p and v ask for at kLeanMax, as kPitchLean does the LQI's.
+inline constexpr damp::design::LQRWeights kPitchFilterCost{
+    .Q = damp::diag(1.0 / square(kPmax), 1.0 / square(kVmax), 1.0 / square(kThetaMax), 1.0 / square(0.05)),
+    .R = {3.2},
 };
+inline constexpr damp::DemandLimit kPitchFilterLean{.state = 2, .outer = {0, 1}, .lim = {.lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)}};
 
 #if BOT_PITCH_LAW == 1
-inline constexpr auto kPitchOFLQG = damp::design::oflqg(
-    pitch_plant_read(kBotFitted), kTs, damp::InputDelay<kDelayTicks>{kDelay}, kPitchFilterCost, kPitchNoise, pitch_disturbance(kBotFitted)
+inline constexpr auto kPitchOFLQG = damp::design::state_feedback(
+    pitch_plant_read(kBotFitted), kTs, kPitchFilterCost, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
 );
 #elif BOT_PITCH_LAW == 2
 // The OFMPC regulates y = [p − p_ref, v − speed, θ, ω] to a standstill, in a frame riding the speed
@@ -229,7 +229,7 @@ inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace<4, 1, 4,
     auto noise        = kPitchNoise;
     noise.process     = kPitchNoise.process * (1.0 / kTs);
     noise.disturbance = kPitchNoise.disturbance * kTs;
-    return damp::design::ofmpc<kHorizon, kMoves>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
+    return damp::design::mpc<kHorizon, kMoves>(kPitchSampled, w, c, noise, pitch_disturbance_sampled(kBotFitted));
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();
 #endif

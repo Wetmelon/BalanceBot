@@ -120,7 +120,7 @@ $`\theta`$ cancels from the heading. The IMU is mounted on its side: its x axis 
 
 ## Design
 
-Each axis is a `design::lqi` on the continuous plant sampled at $`T_s = 10`$ ms: ZOH for the dynamics, Van Loan for the cost, so the weights are in continuous time and keep their meaning if the rate changes. The integrator is on the measured output, position for pitch and heading for yaw:
+Each axis is a `design::state_feedback` with an `IntegralAction` (an LQI) on the continuous plant sampled at $`T_s = 10`$ ms: ZOH for the dynamics, Van Loan for the cost, so the weights are in continuous time and keep their meaning if the rate changes. The integrator is on the measured output, position for pitch and heading for yaw:
 
 ```math
 \dot\xi = y_\text{ref} - y, \qquad J = \int_0^\infty \left( x^\top Q\, x + Q_\xi\, \xi^2 + R\, u^2 \right) dt
@@ -132,7 +132,7 @@ It removes the steady error that a CoM offset, an IMU mount error, a slope or fr
 u = -K \begin{bmatrix} x - x^* \\ \xi \end{bmatrix}, \qquad x^* = \begin{bmatrix} p_\text{ref} & v_\text{cmd} & 0 & 0 \end{bmatrix}^\top
 ```
 
-Pitch carries the measured delay (below, "Identification on the bot"): `design::lqi(pitch_plant(), Ts, InputDelay<3>{θ_d}, weights)` designs on the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, three registers of the torques already sent. The law holds them itself, the torques `back_calculate` recorded, so it takes $`[p, v, \theta, \omega]`$ and subtracts part of what is still on its way:
+Pitch carries the measured delay (below, "Identification on the bot"): `design::state_feedback(pitch_plant(), Ts, weights, lean_cap, IntegralAction{.Q = 350.0}, InputDelay<3>{θ_d})` designs on the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, three delay states holding the torques already sent. The law holds them itself, the torques `back_calculate` recorded, so it takes $`[p, v, \theta, \omega]`$ and subtracts part of what is still on its way:
 
 ```math
 \tau_k = -K \begin{bmatrix} x_k - x^* \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix}
