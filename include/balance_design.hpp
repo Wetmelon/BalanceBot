@@ -177,33 +177,16 @@ inline constexpr auto kPitchOFLQG = damp::design::state_feedback(
     pitch_plant_read(kBotFitted), kTs, kPitchFilterCost, kPitchTorqueLim, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
 );
 #elif BOT_PITCH_LAW == 2
-// The OFMPC regulates y = [p − p_ref, v − speed, θ, ω] to a standstill, in a frame riding the speed
-// command. Its constraints are the LQI's clamps: torque, lean, and speed off the command.
+// The OFMPC on the OFLQG's plant, noise, disturbance model and delay: p held at r, about the point
+// the tick plans (the reference position at the speed command). Its constraints are the LQI's
+// clamps: torque, lean, and speed within kSpeedMargin of the command, which the tick moves with it.
 inline constexpr size_t kHorizon      = 10;   ///< [steps] 0.1 s, then the DARE's cost-to-go
 inline constexpr size_t kMoves        = 5;    ///< [steps] the last move holds to the horizon
 inline constexpr size_t kQpIterations = 40;   ///< ~2.1 ms on the C33 if used up; a push takes 10
 inline constexpr double kSpeedMargin  = 1.0;  ///< [m/s] the most the bot may run off the speed command
 
-// Its 4 noise inputs named: discretize keeps them off the delay states, which a model that names
-// none would put noise on.
-inline constexpr auto kPitchRead    = pitch_plant_read(kBotFitted);
-inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace{.A = kPitchRead.A, .B = kPitchRead.B, .C = kPitchRead.C, .G = damp::Matrix<4, 4>::identity(), .H = damp::Matrix<4, 4>::identity()}, kTs, damp::InputDelay<kDelayTicks>{kDelay}).value();
-
-/// pitch_disturbance, sampled: per step, through the plant's rows (at once), none on the delay states;
-/// it holds p, as pitch_disturbance does.
-[[nodiscard]] constexpr auto pitch_disturbance_sampled(const Nameplate& n) {
-    const auto                                 s  = pitch_plant(n);
-    const auto                                 dd = damp::discretize(damp::StateSpace{.A = s.A, .B = pitch_disturbance(n).Bd, .C = s.C}, kTs).value();
-    damp::design::DisturbanceModel<7, 4, 2, 1> d{.outputs = {0}};
-    for (size_t i = 0; i < 4; ++i) {
-        for (size_t j = 0; j < 2; ++j) {
-            d.Bd(i, j) = dd.B(i, j);
-        }
-    }
-    return d;
-}
-
-/// kPitchFilterCost per step, scaled as the QP scales each signal: by its limit's range (1 if unbounded).
+/// kPitchFilterCost per second, as the LQ designs take it (Qy and Ru over each period, RΔu on the
+/// torque's rate), scaled as the QP scales each signal: by its limit's range (1 if unbounded).
 [[nodiscard]] constexpr auto pitch_mpc_design() {
     const double lean = (double)(kLeanMax), tau = 2.0 * (double)(kWheelTorqueMax);
     const double s[4] = {1.0, 2.0 * kSpeedMargin, 2.0 * lean, 1.0};
@@ -211,20 +194,16 @@ inline constexpr auto kPitchSampled = damp::discretize(damp::StateSpace{.A = kPi
 
     damp::design::MPCWeights<1, 4> w{};
     for (size_t i = 0; i < 4; ++i) {
-        w.Qy(i, i) = kPitchFilterCost.Q(i, i) * kTs * square(s[i]);
+        w.Qy(i, i) = kPitchFilterCost.Q(i, i) * square(s[i]);
     }
     w.Qy_terminal = w.Qy;
-    w.Ru          = kPitchFilterCost.R * (kTs * square(s_u));
-    w.Rdu         = 0.3 * square(s_u);  // [per (N·m)²] torque step: less buzzes at the lean limit
+    w.Ru          = kPitchFilterCost.R * square(s_u);
+    w.Rdu         = 0.3 * kTs * square(s_u);  // 0.3 per (N·m)² a torque step: less buzzes at the lean limit
 
-    // Discrete noise: G ≈ Ts·I, so the density over Ts; the walks per step.
-    auto noise        = kPitchNoise;
-    noise.process     = kPitchNoise.process * (1.0 / kTs);
-    noise.disturbance = kPitchNoise.disturbance * kTs;
     return damp::design::mpc<kHorizon, kMoves>(
-        kPitchSampled, w, damp::design::InputLimits{.lower = {-tau}, .upper = {tau}},
+        pitch_plant_read(kBotFitted), kTs, w, damp::design::InputLimits{.lower = {-tau}, .upper = {tau}},
         damp::design::OutputLimits{.outputs = {1, 2}, .lower = {-kSpeedMargin, -lean}, .upper = {kSpeedMargin, lean}}, damp::design::DareCost{},
-        damp::design::QPIterations{kQpIterations}, noise, pitch_disturbance_sampled(kBotFitted)
+        damp::design::QPIterations{kQpIterations}, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
     );
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();

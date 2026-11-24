@@ -116,10 +116,13 @@ class Balancer {
         pitch_.update({p - p0_, v, m.pitch, m.pitch_rate});
         const float tau = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);
 #elif BOT_PITCH_LAW == 2
-        // In the frame riding the speed command, p held at 0: the target under d̂ is a standstill at
-        // the CoM's upright θ = d̂₁, the torque cancelling d̂₀.
-        pitch_.update({p - p_ref_, v - speed, m.pitch, m.pitch_rate});
-        const float tau = pitch_.control(0.0f)(0);
+        // As the OFLQG, in one step: the readings from where it engaged, the planned point the
+        // feedforward. Its speed limit is absolute, so it moves with the command.
+        auto lim            = pitch_.limits();
+        lim.output.lower(0) = speed - (float)(kSpeedMargin);
+        lim.output.upper(0) = speed + (float)(kSpeedMargin);
+        static_cast<void>(pitch_.set_limits(lim));  // finite, lower below upper: taken
+        const float tau = pitch_.step(0.0f, {p_ref_ - p0_, speed}, {}, {p - p0_, v, m.pitch, m.pitch_rate})(0);
 #else
         pitch_.update({p, v, m.pitch, m.pitch_rate});
         const float tau = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
@@ -134,7 +137,9 @@ class Balancer {
         const float     dtau_sat = damp::clamp(dtau, -dtau_max, dtau_max);
 
         yaw_.back_calculate(dtau_sat);
-        pitch_.predict();
+#if BOT_PITCH_LAW != 2
+        pitch_.predict();  // the OFMPC's step predicted first
+#endif
         yaw_.predict();
 
         return {.right = 0.5f * (tau + dtau_sat), .left = 0.5f * (tau - dtau_sat)};
@@ -170,7 +175,7 @@ class Balancer {
     damp::Law<kPitchOFMPC, float> pitch_{};
 #endif
 #if BOT_PITCH_LAW != 0
-    float p0_ = 0.0f;  ///< [m] where it engaged: the OFLQG's p is from here
+    float p0_ = 0.0f;  ///< [m] where it engaged: the OFLQG's and OFMPC's p is from here
 #endif
     damp::Law<kYawDesign, float> yaw_{};
     damp::LowPass<1, float>      speed_cmd_{kCommandCutoff, (float)(kTs)};

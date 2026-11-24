@@ -9,6 +9,6 @@ env.Append(  # noqa: F821
         "-fno-threadsafe-statics",
         "-Wno-volatile",  # the Arduino cores still use volatile ++/--
         "-Wno-register",  # CMSIS
-        "-fconstexpr-ops-limit=1073741824",  # the designs are solved at compile time: the OFLQG and OFMPC need more than the default 2^25
+        "-fconstexpr-ops-limit=1073741824",  # the designs are solved at compile time: the OFLQG needs 2^26, the OFMPC 2^27, past the default 2^25
     ]
 )
