@@ -22,7 +22,8 @@ namespace bot {
 [[nodiscard]] constexpr double square(double x) { return x * x; }
 
 /// Physical parameters; "measure" marks an estimate. com_height and body_inertia come from the CoM
-/// (4.25 in above the axle) and a drop test (docs/derivation.md).
+/// (4.25 in above the axle) and a drop test; wheel_inertia and torque_gain from the fit on the bot
+/// above 2 Hz (docs/derivation.md).
 struct Nameplate {
     double wheel_radius  = 0.08255;  ///< [m] 6.5 in BotWheel
     double track_width   = 0.400;    ///< [m] between the tire contact patches: 15.75 in
@@ -30,16 +31,13 @@ struct Nameplate {
     double body_mass     = 1.0;      ///< [kg] everything that pitches (measure)
     double body_inertia  = 0.134;    ///< [kg·m²] body about its own CoM, pitch axis
     double wheel_mass    = 2.2;      ///< [kg] per side, what rides on the axle
-    double wheel_inertia = 0.006;    ///< [kg·m²] per side, the rotating part about the axle (measure)
+    double wheel_inertia = 0.027;    ///< [kg·m²] per side, as fitted: 13.4 kg translating (the rotating part alone is ~0.006)
     double yaw_inertia   = 0.18;     ///< [kg·m²] whole bot about the vertical (measure)
     double gravity       = 9.81;     ///< [m/s²]
-    double torque_gain   = 1.0;      ///< the fraction of the asked torque the motors deliver
+    double torque_gain   = 0.88;     ///< the fraction of the asked torque the motors deliver, as fitted
 };
 
 inline constexpr Nameplate kBot{};
-
-/// As identified on the bot above 2 Hz: 0.88 of the asked torque, 13.4 kg translating.
-inline constexpr Nameplate kBotFitted{.wheel_inertia = 0.027, .torque_gain = 0.88};
 inline constexpr double    kTs = 0.01;  ///< [s] 100 Hz control period
 
 /// Coefficients of the pitch-plane mass matrix [a, b cosθ; b cosθ, c].
@@ -104,7 +102,7 @@ struct PitchMass {
 constexpr double kPmax     = 0.02;                // [m]
 constexpr double kVmax     = 0.5;                 // [m/s]
 constexpr double kThetaMax = damp::deg2rad(6.0);  // [rad]
-constexpr double kOmegaMax = 0.12;                // [rad/s]
+constexpr double kOmegaMax = 0.09;                // [rad/s]
 
 inline constexpr float kLeanMax = 0.26f;  ///< [rad] 15°: the most lean position, speed and the integral may ask for
 
@@ -115,11 +113,11 @@ inline constexpr damp::design::LQRWeights kPitchWeights{
         1.0 / square(kThetaMax),
         1.0 / square(kOmegaMax)
     ),
-    .R = {1.5},  // τ 0.82 N·m
+    .R = {3.2},  // τ 0.56 N·m
 };
 // The lean p, v and ∫p (states 0, 1, then the integrator, 4) ask for is capped at kLeanMax: uncapped, a bot held off its reference leans on until it falls.
 inline constexpr damp::DemandLimit            kPitchLean{.state = 2, .outer = {0, 1, 4}, .lower = -(double)(kLeanMax), .upper = (double)(kLeanMax)};
-inline constexpr damp::design::IntegralAction kPitchIntegral{.Q = 350.0};  // ∫p 0.053 m·s
+inline constexpr damp::design::IntegralAction kPitchIntegral{.Q = 200.0};  // ∫p 0.07 m·s
 
 inline constexpr damp::design::LQRWeights kYawWeights{
     .Q = damp::diag(25.0, 1.0),  // ψ 0.2 rad, ψ̇ 1 rad/s
@@ -174,7 +172,7 @@ inline constexpr damp::DemandLimit kPitchFilterLean{.state = 2, .outer = {0, 1},
 
 #if BOT_PITCH_LAW == 1
 inline constexpr auto kPitchOFLQG = damp::design::state_feedback(
-    pitch_plant_read(kBotFitted), kTs, kPitchFilterCost, kPitchTorqueLim, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
+    pitch_plant_read(kBot), kTs, kPitchFilterCost, kPitchTorqueLim, kPitchFilterLean, kPitchNoise, pitch_disturbance(kBot), damp::InputDelay<kDelayTicks>{kDelay}
 );
 #elif BOT_PITCH_LAW == 2
 // The OFMPC on the OFLQG's plant, noise, disturbance model and delay: p held at r, about the point
@@ -201,9 +199,9 @@ inline constexpr double kSpeedMargin  = 1.0;  ///< [m/s] the most the bot may ru
     w.Rdu         = 0.3 * kTs * square(s_u);  // 0.3 per (N·m)² a torque step: less buzzes at the lean limit
 
     return damp::design::mpc<kHorizon, kMoves>(
-        pitch_plant_read(kBotFitted), kTs, w, damp::design::InputLimits{.lower = {-tau}, .upper = {tau}},
+        pitch_plant_read(kBot), kTs, w, damp::design::InputLimits{.lower = {-tau}, .upper = {tau}},
         damp::design::OutputLimits{.outputs = {1, 2}, .lower = {-kSpeedMargin, -lean}, .upper = {kSpeedMargin, lean}}, damp::design::DareCost{},
-        damp::design::QPIterations{kQpIterations}, kPitchNoise, pitch_disturbance(kBotFitted), damp::InputDelay<kDelayTicks>{kDelay}
+        damp::design::QPIterations{kQpIterations}, kPitchNoise, pitch_disturbance(kBot), damp::InputDelay<kDelayTicks>{kDelay}
     );
 }
 inline constexpr auto kPitchOFMPC = pitch_mpc_design();

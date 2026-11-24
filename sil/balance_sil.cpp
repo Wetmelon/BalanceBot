@@ -20,11 +20,11 @@ constexpr int    kSubsteps  = 10;                      // plant steps per contro
 constexpr double kSpread    = 0.2;                     // nameplate error the design must hold
 constexpr double kLateDelay = bot::kDelay + bot::kTs;  // [s] one period more than the design carries
 
-/// The fitted plant (kBotFitted) off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
+/// The nameplate (kBot) off by ±spread: bits 0–3 of c set body mass, body inertia, CoM height above the
 /// axle and wheel inertia high (1) or low (0).
 bot::Nameplate corner(unsigned c, double spread) {
     const auto     f = [&](unsigned bit) { return ((c >> bit) & 1U) != 0U ? 1.0 + spread : 1.0 - spread; };
-    bot::Nameplate n = bot::kBotFitted;
+    bot::Nameplate n = bot::kBot;
     n.body_mass *= f(0);
     n.body_inertia *= f(1);
     n.com_height = n.wheel_radius + f(2) * (n.com_height - n.wheel_radius);
@@ -57,7 +57,7 @@ bot::Nameplate corner(unsigned c, double spread) {
 
 /// The plant as it is, which the design only estimates.
 struct Truth {
-    bot::Nameplate n            = bot::kBotFitted;
+    bot::Nameplate n            = bot::kBot;
     double         friction     = 0.05;         // [N·m·s/rad] per wheel, wheel against body
     double         pitch_offset = 0.0;          // [rad] the IMU reads this much more than the true lean
     double         delay        = bot::kDelay;  // [s] the torque reaches the wheels this late

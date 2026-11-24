@@ -132,7 +132,7 @@ It removes the steady error that a CoM offset, an IMU mount error, a slope or fr
 u = -K \begin{bmatrix} x - x^* \\ \xi \end{bmatrix}, \qquad x^* = \begin{bmatrix} p_\text{ref} & v_\text{cmd} & 0 & 0 \end{bmatrix}^\top
 ```
 
-Pitch carries the measured delay (below, "Identification on the bot"): `design::state_feedback(pitch_plant(), Ts, weights, lean_cap, IntegralAction{.Q = 350.0}, InputDelay<3>{θ_d})` designs on the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, three delay states holding the torques already sent. The law holds them itself, the torques `back_calculate` recorded, so it takes $`[p, v, \theta, \omega]`$ and subtracts part of what is still on its way:
+Pitch carries the measured delay (below, "Identification on the bot"): `design::state_feedback(pitch_plant(), Ts, weights, lean_cap, IntegralAction{.Q = 200.0}, InputDelay<3>{θ_d})` designs on the plant sampled at $`T_s`$ with the torque arriving $`\theta_d`$ = `kDelay` = 22 ms late, three delay states holding the torques already sent. The law holds them itself, the torques `back_calculate` recorded, so it takes $`[p, v, \theta, \omega]`$ and subtracts part of what is still on its way:
 
 ```math
 \tau_k = -K \begin{bmatrix} x_k - x^* \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix}
@@ -187,7 +187,7 @@ The SIL runs its script (hold, engage, release at 2°, push, drive, turn, tip ov
 z_k = \begin{bmatrix} x_k \\ \tau_{k-1} \\ \vdots \\ \tau_{k-4} \\ \xi_k \end{bmatrix}, \qquad u_k = -K \begin{bmatrix} x_k \\ \tau_{k-1} \\ \tau_{k-2} \\ \tau_{k-3} \\ \xi_k \end{bmatrix},
 ```
 
-on all 16 corners of ±20 % on body mass, body inertia, CoM height and wheel inertia, and checks that every closed-loop pole has $`|z| < 1`$. On the current design the largest is 0.995. The script's push is 0.5 N·s: traction caps the torque at 2 N·m a wheel, and much more knocks the bot over. After the drive at 0.5 m/s it allows 6 s to stop, for the slow position loop.
+on all 16 corners of ±20 % on body mass, body inertia, CoM height and wheel inertia, and checks that every closed-loop pole has $`|z| < 1`$. On the current design the largest is 0.997. The script's push is 0.5 N·s: traction caps the torque at 2 N·m a wheel, and much more knocks the bot over. After the drive at 0.5 m/s it allows 6 s to stop, for the slow position loop.
 
 After measuring the real bot, put the numbers in `Nameplate` and rerun the SIL. If a check fails, slow the lean (raise $`R`$) before anything else.
 
