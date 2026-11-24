@@ -167,8 +167,8 @@ class Balancer {
    private:
 #if BOT_PITCH_LAW == 0
     /// The most of the lean the integral may hold, kIntegralLean, as a bound on ξ.
-    static constexpr float         kXiMax = damp::abs((float)(kPitchDesign.state_gain()(0, 2))) * kIntegralLean / damp::abs((float)(kPitchDesign.integral_gain()(0, 0)));
-    damp::Law<kPitchDesign, float> pitch_{};
+    static constexpr float      kXiMax = damp::abs((float)(kPitchLQI.state_gain()(0, 2))) * kIntegralLean / damp::abs((float)(kPitchLQI.integral_gain()(0, 0)));
+    damp::Law<kPitchLQI, float> pitch_{};
 #elif BOT_PITCH_LAW == 1
     damp::Law<kPitchOFLQG, float> pitch_{};
 #else

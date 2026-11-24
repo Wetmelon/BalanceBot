@@ -33,12 +33,13 @@ bot::Nameplate corner(unsigned c, double spread) {
     return n;
 }
 
+#if BOT_PITCH_LAW == 0
 /// Spectral radius of the sampled pitch loop on plant n with the torque @p delay late (up to four
 /// periods), the gain the design's. The law reads x and the three torques it sent last:
 /// z = [x; τ₋₁ … τ₋₄; ξ], u = −K·[x; τ₋₁ … τ₋₃; ξ], ξ += −Ts·p.
-[[maybe_unused]] double delayed_loop_radius(const bot::Nameplate& n, double delay) {  // the LQI's
+double delayed_loop_radius(const bot::Nameplate& n, double delay) {
     const auto         d = damp::discretize(bot::pitch_plant(n), bot::kTs, damp::InputDelay<4>{delay}).value();
-    const auto&        K = bot::kPitchDesign.K;  // [x, τ₋₁, τ₋₂, τ₋₃, ξ]
+    const auto&        K = bot::kPitchLQI.K;  // [x, τ₋₁, τ₋₂, τ₋₃, ξ]
     damp::Matrix<9, 9> L{};
     for (size_t i = 0; i < 8; ++i) {
         for (size_t j = 0; j < 8; ++j) {
@@ -54,6 +55,7 @@ bot::Nameplate corner(unsigned c, double spread) {
     }
     return rho;
 }
+#endif
 
 /// The plant as it is, which the design only estimates.
 struct Truth {
@@ -262,7 +264,7 @@ int main() {
 #if BOT_PITCH_LAW == 0
     std::printf("pitch K [p v theta omega tau-1 tau-2 tau-3 int_p]:");
     for (size_t i = 0; i < 8; ++i) {
-        std::printf(" %+.3f", bot::kPitchDesign.K(0, i));
+        std::printf(" %+.3f", bot::kPitchLQI.K(0, i));
     }
 #else
     std::printf("pitch law %d (1 OFLQG, 2 OFMPC)", BOT_PITCH_LAW);
