@@ -78,11 +78,14 @@ class Balancer {
     /// Hold the pose the bot is in: references at the measurement, integrators and filters cleared.
     constexpr void engage(const Measurement& m) {
         pitch_.reset();
+        auto lim = pitch_.limits();
 #if BOT_PITCH_LAW == 0
-        pitch_.integral_lim = {.lower = {-kXiMax}, .upper = {kXiMax}};
+        lim.integral = {.lower = {-kXiMax}, .upper = {kXiMax}};
+#else
+        lim.disturbance = kDisturbanceLim;
 #endif
+        static_cast<void>(pitch_.set_limits(lim));  // finite constants, lower below upper: taken
 #if BOT_PITCH_LAW != 0
-        pitch_.disturbance_lim = kDisturbanceLim;
         pitch_.estimator.reset({0.0f, 0.0f, m.pitch, 0.0f, 0.0f, 0.0f, 0.0f});  // at rest leaning θ, no torque in flight, d̂ = 0
         p0_ = position(m);
 #endif
@@ -113,12 +116,10 @@ class Balancer {
         pitch_.update({p - p0_, v, m.pitch, m.pitch_rate});
         const float tau = pitch_.control(0.0f, {p_ref_ - p0_, speed}, {})(0);
 #elif BOT_PITCH_LAW == 2
-        // In the frame riding the speed command: a standstill at the CoM's upright θ = d̂₁, the torque
-        // cancelling d̂₀.
+        // In the frame riding the speed command, p held at 0: the target under d̂ is a standstill at
+        // the CoM's upright θ = d̂₁, the torque cancelling d̂₀.
         pitch_.update({p - p_ref_, v - speed, m.pitch, m.pitch_rate});
-        const auto d_hat = pitch_.disturbance_estimate();
-        pitch_.set_input_target(-d_hat(0));
-        const float tau = pitch_.control({0.0f, 0.0f, d_hat(1), 0.0f})(0);
+        const float tau = pitch_.control(0.0f)(0);
 #else
         pitch_.update({p, v, m.pitch, m.pitch_rate});
         const float tau = pitch_.control(p_ref_, {p_ref_, speed}, {})(0);
